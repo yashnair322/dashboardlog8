@@ -1,0 +1,252 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Signup Page</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #0f0c29, #302b63, #24243e);
+            color: #ffffff;
+        }
+        .navbar {
+            background: #1f1f1f;
+        }
+        .navbar-brand {
+            font-weight: bold;
+        }
+        .form-container {
+            max-width: 600px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #1f1f1f;
+            border-radius: 10px;
+            box-shadow: 0 0 15px rgba(0, 0, 0, 0.5);
+        }
+        .btn-custom {
+            background: #ff8c00;
+            color: #fff;
+        }
+        .btn-custom:hover {
+            background: #ffb347;
+        }
+        .error-message {
+            color: #ff4d4d;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .success-message {
+            color: #4CAF50;
+            font-size: 0.9em;
+            margin-top: 5px;
+        }
+        .hidden {
+            display: none;
+        }
+    </style>
+</head>
+<body>
+
+<!-- Navbar -->
+<nav class="navbar navbar-expand-lg navbar-dark">
+    <div class="container-fluid">
+        <a class="navbar-brand" href="#">Trading Bot</a>
+    </div>
+</nav>
+
+<!-- Signup Form -->
+<div class="container form-container">
+    <h2 class="text-center">Create an Account</h2>
+    <form id="signupForm">
+        <div class="mb-3">
+            <label for="first_name" class="form-label">First Name:</label>
+            <input type="text" id="first_name" name="first_name" class="form-control" required>
+            <div id="first_name_error" class="error-message"></div>
+        </div>
+
+        <div class="mb-3">
+            <label for="last_name" class="form-label">Last Name:</label>
+            <input type="text" id="last_name" name="last_name" class="form-control" required>
+            <div id="last_name_error" class="error-message"></div>
+        </div>
+
+        <div class="mb-3">
+            <label for="email" class="form-label">Email:</label>
+            <input type="email" id="email" name="email" class="form-control" required>
+            <div id="email_error" class="error-message"></div>
+        </div>
+
+        <div class="mb-3">
+            <label for="password" class="form-label">Password:</label>
+            <input type="password" id="password" name="password" class="form-control" required>
+            <div id="password_strength" class="mt-2"></div>
+            <div id="password_error" class="error-message"></div>
+        </div>
+
+        <div class="mb-3">
+            <label for="confirm_password" class="form-label">Confirm Password:</label>
+            <input type="password" id="confirm_password" name="confirm_password" class="form-control" required>
+            <div id="confirm_password_error" class="error-message"></div>
+        </div>
+
+        <button type="submit" class="btn btn-custom w-100">Sign Up</button>
+        <div id="general_message" class="text-center mt-3"></div>
+    </form>
+
+    <!-- Verification Code Section -->
+    <div id="verificationSection" class="hidden">
+        <h3 class="text-center mt-4">Verify Your Email</h3>
+        <p class="text-center">A verification code has been sent to your email. Please enter it below:</p>
+
+        <div class="mb-3">
+            <label for="verification_code" class="form-label">Verification Code:</label>
+            <input type="text" id="verification_code" name="verification_code" class="form-control" required>
+            <div id="verification_code_error" class="error-message"></div>
+        </div>
+
+        <button id="verifyCodeButton" class="btn btn-custom w-100">Verify Code</button>
+        <button id="resendCodeButton" class="btn btn-secondary w-100 mt-2">Resend Code</button>
+        <div id="resend_message" class="text-center mt-3"></div>
+    </div>
+</div>
+
+<!-- Footer -->
+<footer class="text-center py-3">
+    <p>&copy; 2025 Trading Bot Platform. All rights reserved.</p>
+</footer>
+
+<script>
+const apiUrl = window.location.origin; // Get the current host
+
+// Handle Signup
+document.getElementById("signupForm").addEventListener("submit", async function(event) {
+    event.preventDefault();
+    clearMessages();
+
+    const formData = {
+        first_name: document.getElementById("first_name").value,
+        last_name: document.getElementById("last_name").value,
+        email: document.getElementById("email").value,
+        password: document.getElementById("password").value,
+    };
+
+    try {
+        const response = await fetch(`${apiUrl}/signup`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(formData)
+        });
+
+        const result = await response.json();
+        console.log("Signup response:", result);
+
+        if (response.ok) {
+            showMessage("general_message", result.message, "success");
+            showVerificationSection();
+        } else {
+            showMessage("general_message", result.detail || "Signup failed! An unknown error occurred.", "error");
+        }
+    } catch (error) {
+        console.error("Signup error:", error);
+        showMessage("general_message", "Signup failed! Unable to connect to the server.", "error");
+    }
+});
+
+    // Password Strength Indicator
+const passwordInput = document.getElementById("password");
+const passwordStrength = document.getElementById("password_strength");
+
+passwordInput.addEventListener("input", () => {
+    const strength = checkPasswordStrength(passwordInput.value);
+    passwordStrength.innerHTML = strength.message;
+    passwordStrength.style.color = strength.color;
+});
+
+function checkPasswordStrength(password) {
+    if (password.length < 6) {
+        return { message: "Weak: Too short!", color: "#ff4d4d" };
+    }
+    if (password.match(/[a-z]/) && password.match(/[A-Z]/) && password.match(/[0-9]/) && password.match(/[\W]/)) {
+        return { message: "Strong: Great password!", color: "#4CAF50" };
+    }
+    return { message: "Moderate: Add uppercase, numbers, and symbols for strength.", color: "#ffa500" };
+}
+
+    // Validate Confirm Password
+document.getElementById("signupForm").addEventListener("submit", function(event) {
+    const password = document.getElementById("password").value;
+    const confirmPassword = document.getElementById("confirm_password").value;
+
+    if (password !== confirmPassword) {
+        event.preventDefault();
+        showMessage("confirm_password_error", "Passwords do not match!", "error");
+        return;
+    }
+});
+
+
+// Handle Email Verification
+document.getElementById("verifyCodeButton").addEventListener("click", async function() {
+    const email = document.getElementById("email").value;
+    const code = document.getElementById("verification_code").value;
+
+    try {
+        const response = await fetch(`${apiUrl}/verify-email`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, code })
+        });
+
+        const result = await response.json();
+
+        if (response.ok) {
+            alert("Email verified successfully! You can now log in.");
+            window.location.href = "/login";
+        } else {
+            showMessage("verification_code_error", result.detail || "Invalid verification code.", "error");
+        }
+    } catch (error) {
+        console.error("Verification error:", error);
+        showMessage("verification_code_error", "Verification failed! Please try again.", "error");
+    }
+});
+
+// Resend Verification Code
+document.getElementById("resendCodeButton").addEventListener("click", async function() {
+    const email = document.getElementById("email").value;
+
+    try {
+        const response = await fetch(`${apiUrl}/resend-code`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email })
+        });
+
+        const result = await response.json();
+        showMessage("resend_message", result.message, "success");
+    } catch (error) {
+        console.error("Resend code error:", error);
+        showMessage("resend_message", "Failed to resend code. Please try again.", "error");
+    }
+});
+
+function showVerificationSection() {
+    document.getElementById("signupForm").classList.add("hidden");
+    document.getElementById("verificationSection").classList.remove("hidden");
+}
+
+function showMessage(fieldId, message, type) {
+    const element = document.getElementById(fieldId);
+    element.textContent = message;
+    element.className = type === "success" ? "success-message" : "error-message";
+}
+
+function clearMessages() {
+    document.querySelectorAll('.error-message, .success-message').forEach((el) => (el.textContent = ""));
+}
+</script>
+
+</body>
+</html>

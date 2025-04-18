@@ -1,0 +1,209 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeBot Subscription</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/dash.css">
+    <script src="https://checkout.razorpay.com/v1/checkout.js"></script>
+</head>
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-brand">
+            <i class="fas fa-robot me-2"></i>
+            <span>TradeBot</span>
+        </div>
+        <ul class="sidebar-menu">
+            <li>
+                <a href="/dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li>
+                <a href="/create-bot">
+                    <i class="fas fa-plus-circle"></i>
+                    <span>Create New Bot</span>
+                </a>
+            </li>
+            <li>
+                <a href="/subscription" class="active">
+                    <i class="fas fa-crown"></i>
+                    <span>Subscription</span>
+                </a>
+            </li>
+            <li>
+                <a href="#">
+                    <i class="fas fa-cog"></i>
+                    <span>Settings</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <h2 class="section-title mb-4">Choose Your Plan</h2>
+        <div class="row">
+            <!-- Free Plan -->
+            <div class="col-md-4">
+                <div class="stats-card pricing-card h-100">
+                    <div class="text-center mb-3">
+                        <div class="stats-icon active-bots mb-3">
+                            <i class="fas fa-robot"></i>
+                        </div>
+                        <h3>Free Plan</h3>
+                        <div class="price-tag">₹0<span>/month</span></div>
+                    </div>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check me-2"></i>1 Trading Bot</li>
+                        <li><i class="fas fa-check me-2"></i>4 Trades Limit</li>
+                        <li><i class="fas fa-check me-2"></i>Basic Support</li>
+                    </ul>
+                    <button class="btn btn-outline-primary w-100" onclick="selectPlan('free')">
+                        Start Free
+                    </button>
+                </div>
+            </div>
+            <!-- Pro Plan -->
+            <div class="col-md-4">
+                <div class="stats-card pricing-card h-100">
+                    <div class="text-center mb-3">
+                        <div class="stats-icon buy mb-3">
+                            <i class="fas fa-crown"></i>
+                        </div>
+                        <h3>Pro Plan</h3>
+                        <div class="price-tag">₹999<span>/month</span></div>
+                    </div>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check me-2"></i>5 Trading Bots</li>
+                        <li><i class="fas fa-check me-2"></i>Unlimited Trades</li>
+                        <li><i class="fas fa-check me-2"></i>Priority Support</li>
+                    </ul>
+                    <button class="btn btn-primary w-100" onclick="selectPlan('pro')">
+                        Subscribe
+                    </button>
+                </div>
+            </div>
+            <!-- Enterprise Plan -->
+            <div class="col-md-4">
+                <div class="stats-card pricing-card h-100">
+                    <div class="text-center mb-3">
+                        <div class="stats-icon pending mb-3">
+                            <i class="fas fa-building"></i>
+                        </div>
+                        <h3>Enterprise Plan</h3>
+                        <div class="price-tag">₹2499<span>/month</span></div>
+                    </div>
+                    <ul class="feature-list">
+                        <li><i class="fas fa-check me-2"></i>Unlimited Bots</li>
+                        <li><i class="fas fa-check me-2"></i>Unlimited Trades</li>
+                        <li><i class="fas fa-check me-2"></i>24/7 Support</li>
+                    </ul>
+                    <button class="btn btn-primary w-100" onclick="selectPlan('enterprise')">
+                        Subscribe
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        async function selectPlan(plan) {
+            if (plan === 'free') {
+                window.location.href = '/create-bot';
+                return;
+            }
+
+            try {
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    alert('Please log in first');
+                    window.location.href = '/login';
+                    return;
+                }
+
+                const response = await fetch('/create-order', {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`
+                    },
+                    body: JSON.stringify({ plan })
+                });
+
+                const data = await response.json();
+                
+                const options = {
+                    key: data.key_id,
+                    amount: data.amount,
+                    currency: data.currency,
+                    name: "TradeBot",
+                    description: `${plan.charAt(0).toUpperCase() + plan.slice(1)} Plan Subscription`,
+                    order_id: data.order_id,
+                    handler: async function (response) {
+                        const verifyResponse = await fetch('/verify-payment', {
+                            method: 'POST',
+                            headers: {
+                                'Content-Type': 'application/json',
+                                'Authorization': `Bearer ${token}`
+                            },
+                            body: JSON.stringify({
+                                razorpay_payment_id: response.razorpay_payment_id,
+                                razorpay_order_id: response.razorpay_order_id,
+                                razorpay_signature: response.razorpay_signature,
+                                plan: plan
+                            })
+                        });
+                        
+                        if (verifyResponse.ok) {
+                            alert('Payment successful! Redirecting to bot creation...');
+                            window.location.href = '/create-bot';
+                        } else {
+                            alert('Payment verification failed. Please try again.');
+                        }
+                    }
+                };
+                
+                const rzp = new Razorpay(options);
+                rzp.open();
+            } catch (error) {
+                console.error('Error:', error);
+                alert('An error occurred. Please try again.');
+            }
+        }
+    </script>
+
+    <style>
+        .pricing-card {
+            text-align: left;
+            padding: 2rem;
+        }
+        .price-tag {
+            font-size: 2.5rem;
+            font-weight: 600;
+            margin: 1rem 0;
+        }
+        .price-tag span {
+            font-size: 1rem;
+            color: #64748b;
+        }
+        .feature-list {
+            list-style: none;
+            padding: 0;
+            margin: 1.5rem 0;
+        }
+        .feature-list li {
+            margin-bottom: 0.75rem;
+            color: #1e293b;
+        }
+        .btn {
+            margin-top: auto;
+        }
+    </style>
+</body>
+</html>

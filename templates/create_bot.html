@@ -1,0 +1,488 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Trading Bot Connector</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/static/create.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Sidebar Navigation (for desktop) -->
+    <aside class="sidebar">
+        <div class="sidebar-brand">
+            <i class="fas fa-robot me-2"></i>TradeBot
+        </div>
+        <ul class="sidebar-menu">
+            <li>
+                <a href="/dashboard">
+                    <i class="fas fa-chart-line"></i>
+                    Dashboard
+                </a>
+            </li>
+            <li>
+                <a href="/create-bot" class="active">
+                    <i class="fas fa-plus-circle"></i>
+                    Create Bot
+                </a>
+            </li>
+            <li>
+                <a href="/settings">
+                    <i class="fas fa-cog"></i>
+                    Settings
+                </a>
+            </li>
+            <li class="mt-auto">
+                <a href="#" id="sidebar-logout">
+                    <i class="fas fa-sign-out-alt"></i>
+                    Logout
+                </a>
+            </li>
+        </ul>
+    </aside>
+
+    <!-- Navbar (for mobile) -->
+    <nav class="navbar navbar-expand-lg d-lg-none">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">
+                <i class="fas fa-robot me-2"></i>TradeBot
+            </a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav me-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="/dashboard">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link active" href="/create-bot">Create Bot</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="/settings">Settings</a>
+                    </li>
+                </ul>
+                <div class="d-flex">
+                    <button id="logoutButton" class="btn btn-custom">
+                        <i class="fas fa-sign-out-alt me-1"></i>Logout
+                    </button>
+                </div>
+            </div>
+        </div>
+    </nav>
+
+    <!-- Main content container -->
+    <div class="container">
+        <h2 class="text-center mb-4">Create Your Trading Bot</h2>
+           <!-- Wizard progress steps similar to the second image -->
+        <div class="wizard-progress mb-4">
+            <div class="wizard-progress-bar">
+                <div class="progress-step active" id="step1-indicator">
+                    <div class="step-icon">
+                        <i class="fas fa-info-circle"></i>
+                    </div>
+                    <div class="step-label">Basic Details</div>
+                </div>
+                <div class="progress-step" id="step2-indicator">
+                    <div class="step-icon">
+                        <i class="fas fa-exchange-alt"></i>
+                    </div>
+                    <div class="step-label">Exchange Setup</div>
+                </div>
+                <div class="progress-step" id="step3-indicator">
+                    <div class="step-icon">
+                        <i class="fas fa-envelope"></i>
+                    </div>
+                    <div class="step-label">Email Config</div>
+                </div>
+                <div class="progress-step" id="step4-indicator">
+                    <div class="step-icon">
+                        <i class="fas fa-check-circle"></i>
+                    </div>
+                    <div class="step-label">Review</div>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="card-body">
+                <form id="botForm">
+                    <!-- Step 1: Basic Details -->
+                    <div class="form-step" id="step1">
+                        <h3 class="step-title">Let's start with the basic details</h3>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="name" class="form-label">Bot Name</label>
+                                <input type="text" class="form-control" id="name" name="name" placeholder="Enter a name for your bot" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="exchange" class="form-label">Exchange</label>
+                                <select class="form-select" id="exchange" name="exchange" required>
+                                    <option value="" selected disabled>- Select exchange -</option>
+                                    <option value="binance">Binance</option>
+                                    <option value="bybit">Bybit</option>
+                                    <option value="kucoin">KuCoin</option>
+                                    <option value="okx">OKX</option>
+                                    <option value="bitget">Bitget</option>
+                                    <option value="oanda">OANDA</option>
+                                    <option value="metatrader5">MetaTrader 5 (MT5)</option>
+                                </select>
+                            </div>
+                        </div>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="symbol" class="form-label">Trading Symbol</label>
+                                <input type="text" class="form-control" id="symbol" name="symbol" placeholder="e.g., BTC/USDT or GBP/USD" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="quantity" class="form-label">Trade Quantity</label>
+                                <input type="number" class="form-control" id="quantity" name="quantity" value="1.0" step="0.01" required>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-end mt-4">
+                            <button type="button" class="btn btn-custom next-step">Next <i class="fas fa-arrow-right ms-1"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Step 2: Exchange Setup -->
+                    <div class="form-step" id="step2" style="display: none;">
+                        <h3 class="step-title">Exchange Connection Details</h3>
+                        
+                        <!-- API Credentials Section -->
+                        <div id="apiCredentials">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="apiKey" class="form-label">API Key</label>
+                                    <input type="password" class="form-control" id="apiKey" name="apiKey">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="apiSecret" class="form-label">API Secret</label>
+                                    <input type="password" class="form-control" id="apiSecret" name="apiSecret">
+                                    <small class="text-muted">Not required for OANDA</small>
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="accountId" class="form-label">Account ID</label>
+                                    <input type="text" class="form-control" id="accountId" name="accountId">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- MetaTrader 5 Credentials -->
+                        <div id="mt5Credentials" style="display: none;">
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="login" class="form-label">Account Login</label>
+                                    <input type="text" class="form-control" id="login" name="login">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="password" class="form-label">Account Password</label>
+                                    <input type="password" class="form-control" id="password" name="password">
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="server" class="form-label">Account Server</label>
+                                    <input type="text" class="form-control" id="server" name="server">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="slopping" class="form-label">Slopping (in pips)</label>
+                                    <input type="number" class="form-control" id="slopping" name="slopping" value="3">
+                                </div>
+                            </div>
+                            <div class="row mb-3">
+                                <div class="col-md-6">
+                                    <label for="deviation" class="form-label">Deviation</label>
+                                    <input type="number" class="form-control" id="deviation" name="deviation" value="10">
+                                </div>
+                                <div class="col-md-6">
+                                    <label for="magicNumber" class="form-label">Magic Number</label>
+                                    <input type="number" class="form-control" id="magicNumber" name="magicNumber" value="123456">
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <button type="button" class="btn btn-outline-custom prev-step"><i class="fas fa-arrow-left me-1"></i> Previous</button>
+                            <button type="button" class="btn btn-custom next-step">Next <i class="fas fa-arrow-right ms-1"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Step 3: Email Configuration -->
+                    <div class="form-step" id="step3" style="display: none;">
+                        <h3 class="step-title">Email Configuration for Trade Signals</h3>
+                        
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="email_address" class="form-label">Email Address</label>
+                                <input type="email" class="form-control" id="email_address" name="email_address" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="email_password" class="form-label">Email Password</label>
+                                <input type="password" class="form-control" id="email_password" name="email_password" required>
+                            </div>
+                        </div>
+
+                        <div class="row mb-3">
+                            <div class="col-md-6">
+                                <label for="imap_server" class="form-label">IMAP Server</label>
+                                <input type="text" class="form-control" id="imap_server" name="imap_server" value="imap.gmail.com" required>
+                            </div>
+                            <div class="col-md-6">
+                                <label for="email_subject" class="form-label">Email Subject Filter</label>
+                                <input type="text" class="form-control" id="email_subject" name="email_subject" placeholder="e.g., BTC/USDT Signal" required>
+                            </div>
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <button type="button" class="btn btn-outline-custom prev-step"><i class="fas fa-arrow-left me-1"></i> Previous</button>
+                            <button type="button" class="btn btn-custom next-step">Next <i class="fas fa-arrow-right ms-1"></i></button>
+                        </div>
+                    </div>
+
+                    <!-- Step 4: Review -->
+                    <div class="form-step" id="step4" style="display: none;">
+                        <h3 class="step-title">Review Your Trading Bot Configuration</h3>
+                        
+                        <div class="review-section">
+                            <h5>Basic Details</h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Bot Name:</strong> <span id="review-botName"></span></p>
+                                    <p><strong>Exchange:</strong> <span id="review-exchange"></span></p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p><strong>Trading Symbol:</strong> <span id="review-symbol"></span></p>
+                                    <p><strong>Trade Quantity:</strong> <span id="review-quantity"></span></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="review-section mt-3">
+                            <h5>Email Configuration</h5>
+                            <div class="row">
+                                <div class="col-md-6">
+                                    <p><strong>Email Address:</strong> <span id="review-emailAddress"></span></p>
+                                    <p><strong>IMAP Server:</strong> <span id="review-imapServer"></span></p>
+                                </div>
+                                <div class="col-md-6">
+                                    <p><strong>Email Subject Filter:</strong> <span id="review-emailSubject"></span></p>
+                                </div>
+                            </div>
+                        </div>
+
+                        <div class="alert alert-info mt-3">
+                            <i class="fas fa-info-circle me-2"></i> API Keys, passwords, and other credentials will not be displayed for security reasons but will be saved when you create your bot.
+                        </div>
+
+                        <div class="d-flex justify-content-between mt-4">
+                            <button type="button" class="btn btn-outline-custom prev-step"><i class="fas fa-arrow-left me-1"></i> Previous</button>
+                            <button type="submit" class="btn btn-custom"><i class="fas fa-plus-circle me-1"></i> Create Bot</button>
+                        </div>
+                    </div>
+                </form>
+
+                <div id="botResponse" class="mt-3"></div>
+            </div>
+        </div>        
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Add this to handle logout from both sidebar and navbar
+        document.addEventListener('DOMContentLoaded', function() {
+            // Form step navigation
+            const steps = document.querySelectorAll('.form-step');
+            const nextButtons = document.querySelectorAll('.next-step');
+            const prevButtons = document.querySelectorAll('.prev-step');
+            const indicators = document.querySelectorAll('.progress-step');
+            let currentStep = 0;
+
+            // Handle "Next" button clicks
+            nextButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    // Validate current step (simple validation)
+                    const currentStepElement = steps[currentStep];
+                    const requiredFields = currentStepElement.querySelectorAll('[required]');
+                    let isValid = true;
+
+                    requiredFields.forEach(field => {
+                        if (!field.value) {
+                            isValid = false;
+                            field.classList.add('is-invalid');
+                            // Add error message below the field
+                            let errorDiv = field.nextElementSibling;
+                            if (!errorDiv || !errorDiv.classList.contains('invalid-feedback')) {
+                                errorDiv = document.createElement('div');
+                                errorDiv.className = 'invalid-feedback';
+                                field.parentNode.insertBefore(errorDiv, field.nextSibling);
+                            }
+                            errorDiv.textContent = `${field.name} is required`;
+                        } else {
+                            field.classList.remove('is-invalid');
+                            const errorDiv = field.nextElementSibling;
+                            if (errorDiv && errorDiv.classList.contains('invalid-feedback')) {
+                                errorDiv.remove();
+                            }
+                        }
+                    });
+
+                    if (!isValid) {
+                        return;
+                    }
+
+                    // If on step 3 (final step before review), populate review data
+                    if (currentStep === 2) {
+                        populateReviewData();
+                    }
+
+                    // Hide current step and show next step
+                    steps[currentStep].style.display = 'none';
+                    currentStep++;
+                    steps[currentStep].style.display = 'block';
+                    
+                    // Update progress indicators
+                    updateProgressIndicators();
+                });
+            });
+
+            // Handle "Previous" button clicks
+            prevButtons.forEach(button => {
+                button.addEventListener('click', () => {
+                    steps[currentStep].style.display = 'none';
+                    currentStep--;
+                    steps[currentStep].style.display = 'block';
+                    
+                    // Update progress indicators
+                    updateProgressIndicators();
+                });
+            });
+
+            // Update progress indicators based on current step
+            function updateProgressIndicators() {
+                indicators.forEach((indicator, index) => {
+                    if (index < currentStep) {
+                        indicator.classList.remove('active');
+                        indicator.classList.add('completed');
+                    } else if (index === currentStep) {
+                        indicator.classList.add('active');
+                        indicator.classList.remove('completed');
+                    } else {
+                        indicator.classList.remove('active', 'completed');
+                    }
+                });
+            }
+
+            // Toggle between API credentials and MT5 credentials
+            document.getElementById('exchange').addEventListener('change', function() {
+                const exchange = this.value;
+                const apiCredentials = document.getElementById('apiCredentials');
+                const mt5Credentials = document.getElementById('mt5Credentials');
+                
+                if (exchange === 'metatrader5') {
+                    apiCredentials.style.display = 'none';
+                    mt5Credentials.style.display = 'block';
+                } else {
+                    apiCredentials.style.display = 'block';
+                    mt5Credentials.style.display = 'none';
+                }
+            });
+
+            // Populate review data
+            function populateReviewData() {
+                document.getElementById('review-botName').textContent = document.getElementById('name').value;
+                document.getElementById('review-exchange').textContent = document.getElementById('exchange').options[document.getElementById('exchange').selectedIndex].text;
+                document.getElementById('review-symbol').textContent = document.getElementById('symbol').value;
+                document.getElementById('review-quantity').textContent = document.getElementById('quantity').value;
+                document.getElementById('review-emailAddress').textContent = document.getElementById('email_address').value;
+                document.getElementById('review-imapServer').textContent = document.getElementById('imap_server').value;
+                document.getElementById('review-emailSubject').textContent = document.getElementById('email_subject').value;
+            }
+
+            // Form submission
+            document.getElementById('botForm').addEventListener('submit', async (e) => {
+                e.preventDefault();
+
+                // Get token from localStorage
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    document.getElementById('botResponse').innerHTML = `<div class="error-message"><i class="fas fa-exclamation-circle me-2"></i>Authentication required. Please log in first.</div>`;
+                    return;
+                }
+
+                const formData = new FormData(e.target);
+                const formObject = Object.fromEntries(formData.entries());
+
+                // Remove unnecessary fields for non-MT5 exchanges
+                if (formObject.exchange !== 'metatrader5') {
+                    delete formObject.login;
+                    delete formObject.password;
+                    delete formObject.server;
+                    delete formObject.slopping;
+                    delete formObject.deviation;
+                    delete formObject.magicNumber;
+                }
+
+                // Show loading state
+                document.getElementById('botResponse').innerHTML = `<div class="response-message"><i class="fas fa-spinner fa-spin me-2"></i>Creating your bot...</div>`;
+
+                try {
+                    const response = await fetch('/create-bot', {
+                        method: 'POST',
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'Authorization': `Bearer ${token}`
+                        },
+                        body: JSON.stringify(formObject),
+                    });
+
+                    // Handle authentication errors
+                    if (response.status === 401) {
+                        document.getElementById('botResponse').innerHTML = `<div class="error-message"><i class="fas fa-lock me-2"></i>Authentication failed. Please log in again.</div>`;
+                        return;
+                    }
+
+                    const result = await response.json();
+
+                    if (!response.ok) {
+                        if (Array.isArray(result.detail)) {
+                            const errorMessages = result.detail.map(err => `${err.loc.join(' → ')}: ${err.msg}`).join('<br>');
+                            throw new Error(errorMessages);
+                        } else {
+                            throw new Error(result.detail || "Failed to create bot");
+                        }
+                    }
+
+                    if (result.message) {
+                        document.getElementById('botResponse').innerHTML = `<div class="success-message"><i class="fas fa-check-circle me-2"></i>${result.message}</div>`;
+                        
+                        // Reset form
+                        setTimeout(() => {
+                            window.location.href = '/dashboard';
+                        }, 2000);
+                    } else {
+                        document.getElementById('botResponse').innerHTML = `<div class="error-message"><i class="fas fa-exclamation-triangle me-2"></i>Unexpected response from server</div>`;
+                    }
+
+                } catch (error) {
+                    console.error("Error caught:", error);
+                    document.getElementById('botResponse').innerHTML = `<div class="error-message"><i class="fas fa-exclamation-circle me-2"></i>Error: ${error.message}</div>`;
+                }
+            });
+            // Handle both logout buttons
+            document.getElementById("logoutButton").addEventListener("click", logout);
+            document.getElementById("sidebar-logout").addEventListener("click", logout);
+            
+            function logout() {
+                localStorage.removeItem("token");
+                window.location.href = "/";
+            }
+        });
+    </script>
+</body>
+</html>

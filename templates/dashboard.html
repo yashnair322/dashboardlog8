@@ -1,0 +1,505 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TradeBot Dashboard</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/dash.css">
+</head>
+
+<body>
+    <!-- Sidebar -->
+    <div class="sidebar">
+        <div class="sidebar-brand">
+            <i class="fas fa-robot me-2"></i>
+            <span>TradeBot</span>
+        </div>
+        <ul class="sidebar-menu">
+            <li>
+                <a href="/dashboard" class="active">
+                    <i class="fas fa-chart-line"></i>
+                    <span>Dashboard</span>
+                </a>
+            </li>
+            <li>
+                <a href="/create-bot" id="create-bot-nav">
+                    <i class="fas fa-plus-circle"></i>
+                    <span>Create New Bot</span>
+                </a>
+            </li>
+            <li>
+                <a href="/subscriptions">
+                    <i class="fas fa-crown"></i>
+                    <span>Subscription</span>
+                </a>
+            </li>
+            <li>
+                <a href="#">
+                    <i class="fas fa-cog"></i>
+                    <span>Settings</span>
+                </a>
+            </li>
+        </ul>
+    </div>
+
+    <!-- Main Content -->
+    <div class="main-content">
+        <!-- Stats Cards -->
+        <div class="row">
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="stats-card d-flex align-items-center">
+                    <div class="stats-icon active-bots">
+                        <i class="fas fa-robot"></i>
+                    </div>
+                    <div>
+                        <div class="stats-title">Active Bots</div>
+                        <h3 class="stats-value" id="active-bots-count">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="stats-card d-flex align-items-center">
+                    <div class="stats-icon buy">
+                        <i class="fas fa-arrow-trend-up"></i>
+                    </div>
+                    <div>
+                        <div class="stats-title">Buy Positions</div>
+                        <h3 class="stats-value">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="stats-card d-flex align-items-center">
+                    <div class="stats-icon sell">
+                        <i class="fas fa-arrow-trend-down"></i>
+                    </div>
+                    <div>
+                        <div class="stats-title">Sell Positions</div>
+                        <h3 class="stats-value">0</h3>
+                    </div>
+                </div>
+            </div>
+            <div class="col-xl-3 col-md-6 mb-4">
+                <div class="stats-card d-flex align-items-center">
+                    <div class="stats-icon pending">
+                        <i class="far fa-clock"></i>
+                    </div>
+                    <div>
+                        <div class="stats-title">Pending Signals</div>
+                        <h3 class="stats-value">0</h3>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Your Trading Bots Section -->
+        <div class="section-header">
+            <h2 class="section-title">Your Trading Bots</h2>
+            <button class="btn-create" id="create-bot-header">
+                <i class="fas fa-plus"></i> Create Bot
+            </button>
+        </div>
+
+        <div id="bots-container">
+            <div id="empty-state" class="empty-state">
+                <h4>No trading bots yet</h4>
+                <p>Create your first trading bot to start automating your trades</p>
+                <button class="btn btn-primary" id="create-first-bot">Create Your First Bot</button>
+            </div>
+
+            <!-- Bot Controls Section - Will be shown when bots exist -->
+            <div id="bot-controls-section" class="card mb-4" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-terminal me-2"></i>Bot Logs & Controls
+                </div>
+                <div class="card-body">
+                    <div class="row mb-3">
+                        <div class="col-md-8">
+                            <label for="botSelector">Select Bot to View Logs:</label>
+                            <select id="botSelector" class="form-select">
+                                <option value="">Select a bot...</option>
+                            </select>
+                        </div>
+                        <div class="col-md-4">
+                            <div id="botControls" class="d-flex align-items-end h-100"></div>
+                        </div>
+                    </div>
+
+                    <div id="botResponse"></div>
+                    <pre id="logs">Select a bot to see its logs...</pre>
+                </div>
+            </div>
+
+            <!-- Active Bots List - Will be shown when bots exist -->
+            <div id="active-bots-card" class="card mb-4" style="display: none;">
+                <div class="card-header">
+                    <i class="fas fa-server me-2"></i>Active Bots
+                </div>
+                <div class="card-body">
+                    <div id="botList" class="bot-list">
+                        <!-- Bot items will be dynamically added here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Recent Activity Section -->
+        <div class="activity-card">
+            <h3 class="activity-title">Recent Bot Activity</h3>
+            <table class="activity-table">
+                <thead>
+                    <tr>
+                        <th>Timestamp</th>
+                        <th>Bot</th>
+                        <th>Symbol</th>
+                        <th>Action</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody id="activity-logs">
+                    <tr>
+                        <td colspan="5" class="empty-activity">No activity logs found</td>
+                    </tr>
+                </tbody>
+            </table>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script>
+        // Initialize lastLogMessage
+        let lastLogMessage = "";
+        let socket;
+
+        // Load existing bots from database on page load
+        document.addEventListener('DOMContentLoaded', async () => {
+            // Add event listeners to all "Create Bot" buttons to redirect to create_bot.html
+            document.getElementById('create-bot-nav').addEventListener('click', function (e) {
+                e.preventDefault();
+                window.location.href = '/create-bot';
+            });
+
+            document.getElementById('create-bot-header').addEventListener('click', function () {
+                window.location.href = '/create-bot';
+            });
+
+            document.getElementById('create-first-bot').addEventListener('click', function () {
+                window.location.href = '/create-bot';
+            });
+
+            try {
+                // Get token from localStorage
+                const token = localStorage.getItem('token');
+                if (!token) {
+                    document.getElementById('logs').textContent = 'Authentication required. Please log in first.';
+                    return;
+                }
+
+                const response = await fetch('/get-bots', {
+                    headers: {
+                        'Authorization': `Bearer ${token}`
+                    }
+                });
+
+                if (response.status === 401) {
+                    document.getElementById('logs').textContent = 'Your session has expired. Please log in again.';
+                    return;
+                }
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const botSelector = document.getElementById('botSelector');
+                    const botList = document.getElementById('botList');
+
+                    // Clear existing entries
+                    botList.innerHTML = '';
+                    botSelector.innerHTML = '<option value="">Select a bot...</option>';
+
+                    // Add each bot to the selector and to the bot list
+                    data.bots.forEach(bot => {
+                        // Add to selector
+                        const option = document.createElement('option');
+                        option.value = bot.name; // Changed from bot.bot_name
+                        option.textContent = `${bot.name} (${bot.exchange}: ${bot.symbol})`;
+                        option.dataset.paused = bot.paused;
+                        option.dataset.exchange = bot.exchange;
+                        option.dataset.symbol = bot.symbol;
+                        botSelector.appendChild(option);
+
+                        // Add to bot list
+                        const botItem = document.createElement('div');
+                        botItem.className = 'bot-item';
+
+                        const statusClass = bot.paused ? 'status-paused' : 'status-active';
+                        const statusText = bot.paused ? 'Paused' : 'Active';
+                        const statusIcon = bot.paused ? 'fa-pause-circle' : 'fa-play-circle';
+
+                        botItem.innerHTML = `
+                            <div class="bot-info">
+                                <div class="bot-name-container">
+                                    <i class="fas fa-robot me-2"></i>
+                                    <span class="bot-name">${bot.name}</span>
+                                </div>
+                                <div class="bot-details-container">
+                                    <span class="bot-details">${bot.exchange}: ${bot.symbol}</span>
+                                    <span class="bot-status ${statusClass}">
+                                        <i class="fas ${statusIcon} me-1"></i>${statusText}
+                                    </span>
+                                </div>
+                            </div>
+                        `;
+
+                        botList.appendChild(botItem);
+                    });
+
+                    // Update active bots count
+                    const activeBots = data.bots.filter(bot => bot.paused === false).length;
+                    document.getElementById('active-bots-count').textContent = activeBots;
+
+                    // Show or hide appropriate sections based on bot count
+                    if (data.bots.length > 0) {
+                        document.getElementById('empty-state').style.display = 'none';
+                        document.getElementById('bot-controls-section').style.display = 'block';
+                        document.getElementById('active-bots-card').style.display = 'block';
+                        document.getElementById('logs').textContent = `${data.bots.length} bots loaded. Select a bot to view logs and control.`;
+                    } else {
+                        document.getElementById('empty-state').style.display = 'block';
+                        document.getElementById('bot-controls-section').style.display = 'none';
+                        document.getElementById('active-bots-card').style.display = 'none';
+                        document.getElementById('logs').textContent = 'No bots found. Create a new bot to get started.';
+                    }
+                }
+            } catch (error) {
+                console.error("Error loading bots:", error);
+                document.getElementById('logs').textContent = `Error loading bots: ${error.message}`;
+            }
+        });
+
+        // WebSocket for live logs
+        const botSelector = document.getElementById('botSelector');
+        const logsElement = document.getElementById('logs');
+
+        botSelector.addEventListener('change', function () {
+            const selectedBot = this.value;
+            const botControlArea = document.getElementById('botControls');
+
+            // Clear the control area
+            botControlArea.innerHTML = '';
+
+            if (socket) {
+                socket.close();
+            }
+
+            if (selectedBot) {
+                logsElement.textContent = `Connecting to logs for ${selectedBot}...\n`;
+
+                // Get the selected option to access its data attributes
+                const selectedOption = Array.from(botSelector.options)
+                    .find(option => option.value === selectedBot);
+
+                // Create control button for the selected bot based on its state
+                const isPaused = selectedOption.dataset.paused === 'true';
+
+                // Create the button with the correct class and icon
+                botControlArea.innerHTML = `
+                    <button id="toggleButton" class="btn btn-custom ${isPaused ? 'btn-success' : 'btn-warning'}">
+                        <i class="fas ${isPaused ? 'fa-play' : 'fa-pause'} me-1"></i>
+                        ${isPaused ? 'Resume' : 'Pause'}
+                    </button>
+                `;
+
+                // Add event listener to the toggle button
+                document.getElementById('toggleButton').addEventListener('click', function () {
+                    toggleBot(selectedBot);
+                });
+
+                // Connect to WebSocket for logs
+                connectToWebSocket(selectedBot);
+            } else {
+                logsElement.textContent = "Select a bot to see its logs and control options...";
+            }
+        });
+
+        // Function to toggle bot pause state
+        async function toggleBot(botName) {
+            const token = localStorage.getItem('token');
+
+            if (!botName) {
+                alert('Please select a valid bot first.');
+                return;
+            }
+
+            if (!token) {
+                alert('Authentication required. Please log in first.');
+                return;
+            }
+
+            // Disable the button while request is processing to prevent multiple clicks
+            const toggleButton = document.getElementById('toggleButton');
+            const originalHTML = toggleButton.innerHTML;
+            toggleButton.disabled = true;
+            toggleButton.innerHTML = '<i class="fas fa-spinner fa-spin me-1"></i>Processing...';
+
+            try {
+                // Show immediate feedback in logs
+                logsElement.textContent += `\n[${new Date().toLocaleString()}] Sending request to ${toggleButton.textContent.trim().toLowerCase()} bot "${botName}"...`;
+                logsElement.scrollTop = logsElement.scrollHeight;
+
+                // Get the current state to determine if we're pausing
+                const selectedOption = Array.from(document.getElementById('botSelector').options)
+                    .find(option => option.value === botName);
+                const isPausing = selectedOption.dataset.paused === 'false';
+
+                // Include a force_close parameter when pausing
+                let endpoint = `/toggle-bot/${botName}`;
+                if (isPausing) {
+                    endpoint += '?force_close_imap=true';
+                }
+
+                const response = await fetch(endpoint, {
+                    method: 'POST',
+                    headers: {
+                        'Authorization': `Bearer ${token}`,
+                        'Content-Type': 'application/json'
+                    },
+                    body: JSON.stringify({
+                        force_close_imap: isPausing  // Include in the request body as well
+                    }),
+                    cache: 'no-cache'
+                });
+
+                if (response.status === 401) {
+                    alert('Your session has expired. Please log in again.');
+                    return;
+                }
+
+                if (response.ok) {
+                    const data = await response.json();
+                    const selectedOption = Array.from(document.getElementById('botSelector').options)
+                        .find(option => option.value === botName);
+
+                    // Update button text based on new state
+                    if (data.paused) {
+                        selectedOption.dataset.paused = 'true';
+                        toggleButton.innerHTML = '<i class="fas fa-play me-1"></i>Resume';
+                        toggleButton.className = 'btn btn-custom btn-success';
+
+                        // Also update the status in the bot list
+                        updateBotStatusInList(botName, true);
+
+                        // Close the WebSocket connection when pausing the bot
+                        if (socket) {
+                            socket.close();
+                            socket = null;
+
+                            // Add a message indicating logs are stopped
+                            logsElement.textContent += `\n[${new Date().toLocaleString()}] Bot paused. Log streaming stopped.`;
+                            logsElement.textContent += `\n[${new Date().toLocaleString()}] IMAP connection has been forcibly closed.`;
+                            logsElement.scrollTop = logsElement.scrollHeight;
+                        }
+                    } else {
+                        selectedOption.dataset.paused = 'false';
+                        toggleButton.innerHTML = '<i class="fas fa-pause me-1"></i>Pause';
+                        toggleButton.className = 'btn btn-custom btn-warning';
+
+                        // Also update the status in the bot list
+                        updateBotStatusInList(botName, false);
+
+                        // Re-establish WebSocket connection when resuming
+                        connectToWebSocket(botName);
+                    }
+
+                    // Update active bots count
+                    const allOptions = Array.from(document.getElementById('botSelector').options);
+                    const activeBots = allOptions.filter(option => option.value && option.dataset.paused === 'false').length;
+                    document.getElementById('active-bots-count').textContent = activeBots;
+
+                    // Show message
+                    document.getElementById('botResponse').innerHTML = `<div class="response-message success"><i class="fas fa-check-circle me-1"></i>${data.message}</div>`;
+
+                    // Add to logs
+                    if (!data.paused) {
+                        logsElement.textContent += `\n[${new Date().toLocaleString()}] ${data.message}`;
+                        logsElement.scrollTop = logsElement.scrollHeight;
+                    }
+                } else {
+                    const errorData = await response.json();
+                    throw new Error(errorData.detail || 'Failed to toggle bot');
+                }
+            } catch (error) {
+                console.error("Error toggling bot:", error);
+                document.getElementById('botResponse').innerHTML = `<div class="response-message error"><i class="fas fa-exclamation-circle me-1"></i>Error: ${error.message}</div>`;
+
+                // Also show error in logs
+                logsElement.textContent += `\n[${new Date().toLocaleString()}] Error: ${error.message}`;
+                logsElement.scrollTop = logsElement.scrollHeight;
+
+                // Reset button to original state on error
+                toggleButton.innerHTML = originalHTML;
+            } finally {
+                // Re-enable the button
+                toggleButton.disabled = false;
+            }
+        }
+
+        // Create a separate function for WebSocket connection to reuse when resuming
+        function connectToWebSocket(botName) {
+            // Clean up any existing socket
+            if (socket) {
+                socket.close();
+            }
+
+            logsElement.textContent += `\n[${new Date().toLocaleString()}] Connecting to logs for ${botName}...\n`;
+
+            socket = new WebSocket(`${window.location.protocol === 'https:' ? 'wss' : 'ws'}://${window.location.host}/ws/logs/${botName}`);
+
+            socket.onmessage = function (event) {
+                // Skip if this is a duplicate of the last message
+                if (event.data === lastLogMessage) {
+                    return;
+                }
+
+                logsElement.textContent += `${event.data}\n`;
+                // Only scroll the logs container, not the page
+                logsElement.scrollTop = logsElement.scrollHeight;
+                lastLogMessage = event.data;
+            };
+
+            socket.onclose = function () {
+                logsElement.textContent += `\n[${new Date().toLocaleString()}] Connection closed for ${botName}.`;
+                // Only scroll the logs container
+                logsElement.scrollTop = logsElement.scrollHeight;
+            };
+        }
+
+        // Helper function to update bot status in the list
+        function updateBotStatusInList(botName, isPaused) {
+            const botItems = document.querySelectorAll('#botList .bot-item');
+
+            botItems.forEach(item => {
+                const nameElement = item.querySelector('.bot-name');
+                if (nameElement && nameElement.textContent === botName) {
+                    const statusElement = item.querySelector('.bot-status');
+                    if (statusElement) {
+                        const iconClass = isPaused ? 'fa-pause-circle' : 'fa-play-circle';
+                        statusElement.innerHTML = `<i class="fas ${iconClass} me-1"></i>${isPaused ? 'Paused' : 'Active'}`;
+                        statusElement.className = `bot-status ${isPaused ? 'status-paused' : 'status-active'}`;
+                    }
+                }
+            });
+        }
+
+        // Handle Logout
+        document.addEventListener('click', function (e) {
+            if (e.target && e.target.id === 'logoutButton') {
+                localStorage.removeItem("token");
+                window.location.href = "/";
+            }
+        });
+    </script>
+</body>
+
+</html>
