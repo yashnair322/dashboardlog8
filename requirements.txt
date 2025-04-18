@@ -1,0 +1,15 @@
+fastapi
+uvicorn
+psycopg2-binary
+python-dotenv
+jinja2
+python-jose[cryptography]
+passlib
+bcrypt
+python-multipart
+email-validator
+aioimaplib
+aiohttp
+websockets
+asyncpg
+razorpay

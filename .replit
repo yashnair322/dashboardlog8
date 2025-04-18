@@ -1,0 +1,26 @@
+modules = ["python-3.12", "web", "nix"]
+run = "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+
+[nix]
+channel = "stable-24_05"
+packages = ["cargo", "libiconv", "postgresql", "rustc"]
+
+[deployment]
+run = ["sh", "-c", "uvicorn backend.main:app --host 0.0.0.0 --port 8000"]
+
+[workflows]
+runButton = "Run"
+
+[[workflows.workflow]]
+name = "Run"
+mode = "sequential"
+author = 41667673
+
+[[workflows.workflow.tasks]]
+task = "shell.exec"
+args = "uvicorn backend.main:app --host 0.0.0.0 --port 8000"
+
+[[ports]]
+localPort = 8000
+externalPort = 80
+protocol = "http"

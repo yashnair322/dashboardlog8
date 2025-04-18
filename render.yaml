@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: trading-bot
+    runtime: python
+    buildCommand: |
+      pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port 8000
+    envVars:
+      - key: EMAIL_ADDRESS
+        sync: false
+      - key: EMAIL_PASSWORD
+        sync: false
+      - key: IMAP_SERVER
+        value: imap.gmail.com
