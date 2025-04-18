@@ -53,6 +53,17 @@ cursor = conn.cursor()
 # Ensure required tables exist
 # Add subscription_plan and trade_count columns if they don't exist
 cursor.execute("""
+    CREATE TABLE IF NOT EXISTS subscriptions (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(100) NOT NULL,
+        price INTEGER,
+        bot_limit INTEGER
+    );
+""")
+conn.commit()
+
+# Then, create users table with reference to subscriptions
+cursor.execute("""
     CREATE TABLE IF NOT EXISTS users (
         id SERIAL PRIMARY KEY,
         first_name VARCHAR(50) NOT NULL,
@@ -74,7 +85,7 @@ cursor.execute("""
                       WHERE table_name = 'users' AND column_name = 'subscription_plan') THEN
             ALTER TABLE users ADD COLUMN subscription_plan VARCHAR(20) DEFAULT 'free';
         END IF;
-        
+
         IF NOT EXISTS (SELECT FROM information_schema.columns 
                       WHERE table_name = 'users' AND column_name = 'trade_count') THEN
             ALTER TABLE users ADD COLUMN trade_count INTEGER DEFAULT 0;
@@ -83,6 +94,7 @@ cursor.execute("""
     """)
 conn.commit()
 
+# Create bots table
 cursor.execute("""
     CREATE TABLE IF NOT EXISTS bots (
         id SERIAL PRIMARY KEY,
@@ -104,15 +116,34 @@ cursor.execute("""
     """)
 conn.commit()
 
+# Create orders table
 cursor.execute("""
-    CREATE TABLE IF NOT EXISTS subscriptions (
+    CREATE TABLE IF NOT EXISTS orders (
         id SERIAL PRIMARY KEY,
-        name VARCHAR(100) NOT NULL,
-        price INTEGER,
-        bot_limit INTEGER
+        order_id VARCHAR(100) UNIQUE NOT NULL,
+        user_email VARCHAR(100) NOT NULL,
+        plan VARCHAR(20) NOT NULL,
+        amount INTEGER NOT NULL,
+        status VARCHAR(20) DEFAULT 'created',
+        created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
     );
 """)
 conn.commit()
+
+# Insert initial subscriptions if they don't exist
+cursor.execute("SELECT COUNT(*) FROM subscriptions")
+subscription_count = cursor.fetchone()[0]
+if subscription_count == 0:
+    cursor.execute(
+        "INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)",
+        ("Free", 0, 1))
+    cursor.execute(
+        "INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)",
+        ("Pro", 999, 5))
+    cursor.execute(
+        "INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)",
+        ("Enterprise", 2499, 10))
+    conn.commit()
 
 # Insert initial subscriptions
 cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Free", 0, 1))
