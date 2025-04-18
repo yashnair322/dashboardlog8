@@ -1,5 +1,5 @@
 import logging
-from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket
+from fastapi import FastAPI, HTTPException, Request, Depends, WebSocket, Header
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from pydantic import BaseModel, Field
 from datetime import datetime, timedelta
@@ -18,6 +18,7 @@ from passlib.context import CryptContext
 from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 import razorpay
+from typing import Optional
 
 # Importing modules from backend
 from backend import main2
@@ -31,9 +32,10 @@ load_dotenv()
 app = FastAPI()
 app.include_router(router)
 
-# Razorpay Initialization (replace with your actual key and secret)
-razorpay_client = razorpay.Client(auth=("your_key_id", "your_key_secret"))
-
+# Razorpay Initialization - Replace with your actual keys
+RAZORPAY_KEY_ID = os.getenv("RAZORPAY_KEY_ID", "your_key_id")
+RAZORPAY_KEY_SECRET = os.getenv("RAZORPAY_KEY_SECRET", "your_key_secret")
+razorpay_client = razorpay.Client(auth=(RAZORPAY_KEY_ID, RAZORPAY_KEY_SECRET))
 
 # Store verification codes temporarily
 verification_codes = {}
@@ -145,11 +147,14 @@ if subscription_count == 0:
         ("Enterprise", 2499, 10))
     conn.commit()
 
-# Insert initial subscriptions
-cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Free", 0, 1))
-cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Basic", 99, 5))
-cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Premium", 199, 10))
-conn.commit()
+# Insert initial subscriptions if they don't exist
+cursor.execute("SELECT COUNT(*) FROM subscriptions")
+subscription_count = cursor.fetchone()[0]
+if subscription_count == 0:
+    cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Free", 0, 1))
+    cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Pro", 999, 5))
+    cursor.execute("INSERT INTO subscriptions (name, price, bot_limit) VALUES (%s, %s, %s)", ("Enterprise", 2499, 10))
+    conn.commit()
 
 
 # Utility Functions
@@ -206,6 +211,15 @@ class PaymentResponse(BaseModel):
     order_id: str
     signature: str
 
+class PlanRequest(BaseModel):
+    plan: str
+
+class VerifyPaymentRequest(BaseModel):
+    razorpay_payment_id: str
+    razorpay_order_id: str
+    razorpay_signature: str
+    plan: str
+
 # Email Verification
 def send_verification_email(email: str, code: str):
     try:
@@ -230,6 +244,29 @@ def send_verification_email(email: str, code: str):
     except Exception as e:
         raise HTTPException(status_code=500,
                             detail="Failed to send verification email.")
+
+
+# Authentication helper function
+async def get_current_user_from_token(token: str = Depends(oauth2_scheme)):
+    credentials_exception = HTTPException(
+        status_code=401,
+        detail="Could not validate credentials",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    try:
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        email: str = payload.get("sub")
+        if email is None:
+            raise credentials_exception
+        token_data = TokenData(email=email)
+    except JWTError:
+        raise credentials_exception
+    
+    cursor.execute("SELECT id, email, subscription_plan FROM users WHERE email = %s", (token_data.email,))
+    user = cursor.fetchone()
+    if user is None:
+        raise credentials_exception
+    return {"id": user[0], "email": user[1], "subscription_plan": user[2]}
 
 
 # Serve Static Files and Templates
@@ -267,11 +304,9 @@ def reset_password(request: Request):
     return templates.TemplateResponse("reset_password.html",
                                       {"request": request})
 
-@app.get("/subscriptions", response_class=HTMLResponse)
+@app.get("/subscription", response_class=HTMLResponse)
 async def subscriptions(request: Request):
-    cursor.execute("SELECT * FROM subscriptions")
-    subscriptions = cursor.fetchall()
-    return templates.TemplateResponse("subscriptions.html", {"request": request, "subscriptions": subscriptions})
+    return templates.TemplateResponse("subscriptions.html", {"request": request})
 
 # Enable CORS
 app.add_middleware(
@@ -360,34 +395,97 @@ def reset_password(data: VerifyCode):
     except JWTError:
         raise HTTPException(status_code=400, detail="Invalid or expired token")
 
-@app.post("/initiate_payment", response_model=PaymentResponse)
-async def initiate_payment(subscription_id: int):
-    cursor.execute("SELECT price FROM subscriptions WHERE id = %s", (subscription_id,))
-    price = cursor.fetchone()[0]
-    if price is None:
-      raise HTTPException(status_code=404, detail="Subscription not found")
-
-    order_response = razorpay_client.order.create({
-        "amount": price * 100,  # Amount in paise
-        "currency": "INR",
-        "receipt": str(secrets.token_hex(8))
-    })
-
-    return PaymentResponse(payment_id="", order_id=order_response["id"], signature="")
-
-
-@app.post("/complete_payment")
-async def complete_payment(payment_data: PaymentResponse):
-    # Verify payment with Razorpay
+# New routes for Razorpay integration
+@app.post("/create-order")
+async def create_order(plan_request: PlanRequest, authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = authorization.replace("Bearer ", "")
+    
     try:
-      # Add your Razorpay payment verification logic here.
-      # This would involve verifying the signature, order ID, and payment ID.
-      # Once verified, update the user's subscription status in the database.
-      print("Payment verification successful!")
-      return {"message": "Payment successful"}
-
+        user = await get_current_user_from_token(token)
+        plan = plan_request.plan
+        
+        # Get plan amount based on the selected plan
+        amount = 0
+        if plan == "pro":
+            amount = 999 * 100  # ₹999 in paise
+        elif plan == "enterprise":
+            amount = 2499 * 100  # ₹2499 in paise
+        else:
+            raise HTTPException(status_code=400, detail="Invalid plan selected")
+        
+        # Create Razorpay order
+        order_data = {
+            "amount": amount,
+            "currency": "INR",
+            "receipt": f"receipt_{secrets.token_hex(8)}"
+        }
+        
+        order = razorpay_client.order.create(data=order_data)
+        
+        # Store order details in database
+        cursor.execute(
+            "INSERT INTO orders (order_id, user_email, plan, amount, status) VALUES (%s, %s, %s, %s, %s)",
+            (order["id"], user["email"], plan, amount, "created")
+        )
+        conn.commit()
+        
+        # Return necessary details for frontend
+        return {
+            "key_id": RAZORPAY_KEY_ID,
+            "amount": amount,
+            "currency": "INR",
+            "order_id": order["id"]
+        }
+    
+    except JWTError:
+        raise HTTPException(status_code=401, detail="Invalid token")
     except Exception as e:
-      return JSONResponse(status_code=500, content={"message": f"Payment verification failed: {str(e)}"})
+        logging.error(f"Order creation error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to create order: {str(e)}")
+
+@app.post("/verify-payment")
+async def verify_payment(payment_data: VerifyPaymentRequest, authorization: str = Header(None)):
+    if not authorization or not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Invalid authorization header")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    try:
+        user = await get_current_user_from_token(token)
+        
+        # Verify payment signature
+        params_dict = {
+            'razorpay_order_id': payment_data.razorpay_order_id,
+            'razorpay_payment_id': payment_data.razorpay_payment_id,
+            'razorpay_signature': payment_data.razorpay_signature
+        }
+        
+        # Verify signature
+        razorpay_client.utility.verify_payment_signature(params_dict)
+        
+        # Update order status in database
+        cursor.execute(
+            "UPDATE orders SET status = %s WHERE order_id = %s",
+            ("completed", payment_data.razorpay_order_id)
+        )
+        
+        # Update user subscription plan
+        cursor.execute(
+            "UPDATE users SET subscription_plan = %s WHERE email = %s",
+            (payment_data.plan, user["email"])
+        )
+        conn.commit()
+        
+        return {"status": "success", "message": "Payment verified successfully"}
+        
+    except razorpay.errors.SignatureVerificationError:
+        raise HTTPException(status_code=400, detail="Invalid payment signature")
+    except Exception as e:
+        logging.error(f"Payment verification error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to verify payment: {str(e)}")
 
 
 # Start the FastAPI application
