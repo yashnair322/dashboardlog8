@@ -304,7 +304,7 @@ def reset_password(request: Request):
     return templates.TemplateResponse("reset_password.html",
                                       {"request": request})
 
-@app.get("/subscription", response_class=HTMLResponse)
+@app.get("/subscriptions", response_class=HTMLResponse)
 async def subscriptions(request: Request):
     return templates.TemplateResponse("subscriptions.html", {"request": request})
 
