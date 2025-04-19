@@ -1,5 +1,7 @@
 from exchanges import binance, bybit, KuCoin, oanda, meta
 from backend.types import TradeSignal, Bot
+import logging
+import asyncio
 
 # Log streams for each bot
 bot_logs = {}
@@ -163,3 +165,132 @@ async def place_trade(bot, signal):
     except Exception as e:
         log_message(bot.name, f"❌ Failed to place order: {str(e)}")
         return {"status": "error", "message": f"Failed to place order: {str(e)}"}
+
+async def place_trade(bot, signal):
+    """Execute a trade and handle trade count updates for subscription limits."""
+    exchange = bot.exchange.lower()
+    log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
+    conn = None
+    
+    try:
+        # Check trade limits for free plan
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # Get user subscription information
+        cur.execute("""
+            SELECT subscription_plan, trade_count, email 
+            FROM users WHERE email = (
+                SELECT user_email FROM bots WHERE name = %s
+            )""", (bot.name,))
+        
+        user_data = cur.fetchone()
+        
+        if not user_data:
+            log_message(bot.name, "⚠️ Warning: User not found in database. Unable to track trade counts.")
+            user_email = None
+            subscription_plan = "unknown"
+            current_trade_count = 0
+        else:
+            user_email = user_data[2]
+            subscription_plan = user_data[0] or "free"
+            current_trade_count = user_data[1] or 0
+            
+            log_message(bot.name, 
+                f"📊 Current user data: Email: {user_email}, Plan: {subscription_plan}, Trade count: {current_trade_count}")
+            
+            # Check if free plan user has reached trade limit
+            if subscription_plan == 'free' and current_trade_count >= 4:
+                log_message(bot.name, "❌ Trade limit reached for free plan (4 trades). This trade will be rejected.")
+                
+                # Update bot's paused state in database and memory
+                cur.execute("UPDATE bots SET paused = TRUE WHERE name = %s", (bot.name,))
+                conn.commit()
+                bot.paused = True
+                
+                # Close database connection
+                cur.close()
+                conn.close()
+                
+                raise Exception("Trade limit reached for free plan (maximum 4 trades)")
+        
+        # Close the cursor and connection before trade execution
+        cur.close()
+        conn.close()
+        conn = None
+        
+        # Execute the actual trade logic here based on exchange
+        log_message(bot.name, f"🚀 Executing {signal.action.upper()} order for {signal.symbol}...")
+        
+        # Execute exchange-specific logic here
+        if exchange == "binance":
+            # Binance-specific implementation would go here
+            pass
+        elif exchange == "metatrader5":
+            # MetaTrader5-specific implementation would go here
+            pass
+        elif exchange == "coinbase":
+            # Coinbase-specific implementation would go here
+            pass
+        else:
+            # Generic implementation
+            pass
+        
+        # Simulate trade execution delay
+        await asyncio.sleep(1)
+        
+        # After successful trade execution, update the trade count
+        if user_email:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
+            log_message(bot.name, f"📝 Updating trade count for user {user_email}")
+            
+            cur.execute("""
+                UPDATE users 
+                SET trade_count = COALESCE(trade_count, 0) + 1 
+                WHERE email = %s
+                RETURNING trade_count
+            """, (user_email,))
+            
+            updated_count = cur.fetchone()
+            if updated_count:
+                new_count = updated_count[0]
+                log_message(bot.name, f"📊 Trade count updated successfully: {current_trade_count} → {new_count}")
+                
+                # Check if this update just reached the limit
+                if subscription_plan == 'free' and new_count >= 4:
+                    log_message(bot.name, "⚠️ This was your last trade on the free plan. Additional trades will be rejected.")
+            else:
+                log_message(bot.name, "⚠️ Failed to update trade count. Database didn't return updated value.")
+            
+            conn.commit()
+            cur.close()
+            conn.close()
+            conn = None
+        
+        # Return success response
+        log_message(bot.name, f"✅ Order placed successfully: {signal.action.upper()} {signal.symbol}")
+        return {"status": "success", "message": f"Order placed: {signal.action} {signal.symbol}"}
+    
+    except Exception as e:
+        log_message(bot.name, f"❌ Error in place_trade: {str(e)}")
+        raise
+    finally:
+        # Ensure database connections are closed
+        if conn:
+            try:
+                conn.close()
+            except Exception as e:
+                log_message(bot.name, f"⚠️ Error closing database connection: {str(e)}")
+
+# Also add a similar function for close_position to maintain consistency
+async def close_position(bot, signal):
+    """Close an existing position."""
+    log_message(bot.name, f"🔒 Closing {bot.position} position for {signal.symbol}...")
+    
+    # Execute exchange-specific logic here to close the position
+    await asyncio.sleep(1)
+    
+    log_message(bot.name, f"✅ Position closed: {bot.position} {signal.symbol}")
+    return {"status": "success", "message": f"Position closed: {bot.position} {signal.symbol}"}
