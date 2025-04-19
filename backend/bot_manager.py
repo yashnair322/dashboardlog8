@@ -2,6 +2,7 @@ from exchanges import binance, bybit, KuCoin, oanda, meta
 from backend.types import TradeSignal, Bot
 import logging
 import asyncio
+from backend.email_bot_router import get_db_connection, log_message
 
 # Log streams for each bot
 bot_logs = {}
