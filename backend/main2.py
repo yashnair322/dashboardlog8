@@ -1073,129 +1073,67 @@ async def place_trade(bot, signal):
     
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
-    conn = None
     
     try:
-        # Check trade limits for free plan
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        # Get user subscription information for the user who owns this bot
-        cur.execute("""
-            SELECT subscription_plan, trade_count, email 
-            FROM users WHERE email = (
-                SELECT user_email FROM bots WHERE name = %s
-            )""", (bot.name,))
-        
-        user_data = cur.fetchone()
-        
-        if not user_data:
-            log_message(bot.name, "⚠️ Warning: User not found in database. Unable to track trade counts.")
-            user_email = None
-            subscription_plan = "unknown"
-            current_trade_count = 0
-        else:
-            user_email = user_data[2]
-            subscription_plan = user_data[0] or "free"
-            current_trade_count = user_data[1] or 0
-            
-            log_message(bot.name, 
-                f"📊 Current user data: Email: {user_email}, Plan: {subscription_plan}, Trade count: {current_trade_count}")
-            
-            # Check if free plan user has reached trade limit
-            if subscription_plan == 'free' and current_trade_count >= 4:
-                log_message(bot.name, "❌ Trade limit reached for free plan (4 trades). This trade will be rejected.")
-                
-                # Update bot's paused state in database and memory
-                cur.execute("UPDATE bots SET paused = TRUE WHERE name = %s", (bot.name,))
-                conn.commit()
-                bot.paused = True
-                
-                # Close database connection
-                cur.close()
-                conn.close()
-                
-                raise Exception("Trade limit reached for free plan (maximum 4 trades)")
-        
-        # Close the cursor and connection before trade execution
-        cur.close()
-        conn.close()
-        conn = None
-        
-        # Let bot_manager handle the actual trade execution
+        # First, execute the trade
         result = await bot_manager.execute_trade(bot, signal)
         
-        # After successful trade execution, update the trade count ONLY for existing users
-        if user_email:
-            try:
-                log_message(bot.name, f"🔄 Beginning trade count update for user: {user_email}")
-                conn = get_db_connection()
-                cur = conn.cursor()
+        # After successful trade execution, update the trade count
+        try:
+            # Get the database URL from environment
+            db_url = os.getenv("DATABASE_URL")
+            if not db_url:
+                log_message(bot.name, "❌ DATABASE_URL not found in environment")
+                return result
                 
-                # Log the SQL we're about to execute
-                sql = """
-                    UPDATE users 
-                    SET trade_count = COALESCE(trade_count, 0) + 1 
-                    WHERE email = %s
-                    RETURNING trade_count, subscription_plan
-                """
-                log_message(bot.name, f"🔍 Executing SQL: {sql.strip()} with parameters: [{user_email}]")
-                
-                # Update trade count for the user who owns the bot
-                cur.execute(sql, (user_email,))
-                
-                # Check if any rows were updated
-                update_result = cur.fetchone()
-                if update_result:
-                    new_count = update_result[0]
-                    updated_plan = update_result[1] or 'free'
-                    
-                    log_message(bot.name, f"✅ Trade count UPDATE successful!")
-                    log_message(bot.name, f"📈 Trade count increased: {current_trade_count} → {new_count}")
-                    
-                    # Check if this update just reached the limit
-                    if updated_plan == 'free' and new_count >= 4:
-                        log_message(bot.name, "⚠️ This was your last trade on the free plan. Additional trades will be rejected.")
-                else:
-                    log_message(bot.name, "❓ No rows updated in trade_count increment. Is the user email correct?")
-                    log_message(bot.name, f"🔍 Double-checking if user exists with email: {user_email}")
-                    
-                    # Verify user exists
-                    cur.execute("SELECT email FROM users WHERE email = %s", (user_email,))
-                    if cur.fetchone():
-                        log_message(bot.name, "✅ User exists but trade count wasn't updated. Check DB triggers or constraints.")
-                    else:
-                        log_message(bot.name, "❌ User does not exist in database! Cannot update trade count.")
-                
-                conn.commit()
-                log_message(bot.name, "✅ Database transaction committed successfully")
-            except Exception as e:
-                log_message(bot.name, f"❌ Error during trade count update: {str(e)}")
-                if conn:
-                    try:
-                        conn.rollback()
-                        log_message(bot.name, "↩️ Transaction rolled back due to error")
-                    except:
-                        pass
-            finally:
-                if conn:
-                    try:
-                        cur.close()
-                        conn.close()
-                        log_message(bot.name, "🔒 Database connection closed")
-                    except Exception as e:
-                        log_message(bot.name, f"⚠️ Error closing database connection: {str(e)}")
-        
-        # Return the result from the trade execution
-        return result
-    
-    except Exception as e:
-        log_message(bot.name, f"❌ Error in place_trade: {str(e)}")
-        raise
-    finally:
-        # Ensure database connections are closed
-        if conn:
-            try:
+            # Create a new connection specifically for updating trade count
+            conn = psycopg2.connect(db_url)
+            cur = conn.cursor()
+            
+            # Get the user email associated with this bot
+            cur.execute("SELECT user_email FROM bots WHERE name = %s", (bot.name,))
+            user_data = cur.fetchone()
+            
+            if not user_data or not user_data[0]:
+                log_message(bot.name, "❌ Could not find user email for this bot")
                 conn.close()
-            except Exception as e:
-                log_message(bot.name, f"⚠️ Error closing database connection: {str(e)}")
+                return result
+                
+            user_email = user_data[0]
+            log_message(bot.name, f"✅ Found user email: {user_email}")
+            
+            # Simple increment of trade_count for the user
+            cur.execute("""
+                UPDATE users 
+                SET trade_count = COALESCE(trade_count, 0) + 1 
+                WHERE email = %s
+                RETURNING trade_count
+            """, (user_email,))
+            
+            updated_count = cur.fetchone()
+            conn.commit()
+            
+            if updated_count:
+                log_message(bot.name, f"✅ Trade count updated successfully. New count: {updated_count[0]}")
+                
+                # Check if user is on free plan and has reached limit
+                cur.execute("""
+                    SELECT subscription_plan FROM users WHERE email = %s
+                """, (user_email,))
+                plan_data = cur.fetchone()
+                
+                if plan_data and plan_data[0] == 'free' and updated_count[0] >= 4:
+                    log_message(bot.name, "⚠️ This was your last trade on the free plan. Additional trades will be rejected.")
+            else:
+                log_message(bot.name, "⚠️ Trade count was not updated")
+            
+            conn.close()
+            
+        except Exception as e:
+            log_message(bot.name, f"❌ Error updating trade count: {str(e)}")
+            # Continue even if trade count update fails - the trade itself was successful
+        
+        return result
+    except Exception as e:
+        log_message(bot.name, f"❌ Error executing trade: {str(e)}")
+        raise
