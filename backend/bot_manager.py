@@ -1,5 +1,6 @@
 from exchanges import binance, bybit, KuCoin, oanda, meta
 from backend.types import TradeSignal, Bot
+import traceback
 
 # Log streams for each bot
 bot_logs = {}
@@ -183,14 +184,28 @@ async def place_trade(bot, signal):
             log_message(bot.name, "🔢 Updating trade count...")
             
             try:
+                # Make sure environment variables are loaded
+                from dotenv import load_dotenv
+                load_dotenv()  # Add this line to ensure .env is loaded
+                
                 # Get a database connection
                 import psycopg2
                 import os
                 DATABASE_URL = os.getenv("DATABASE_URL")
+                
+                if not DATABASE_URL:
+                    log_message(bot.name, "❌ DATABASE_URL environment variable not found!")
+                    return {
+                        **result,
+                        "warning": "Trade successful but trade count not updated: Database URL missing"
+                    }
+                
+                log_message(bot.name, f"🔌 Connecting to database with URL: {DATABASE_URL[:10]}...")
                 conn = psycopg2.connect(DATABASE_URL)
                 cur = conn.cursor()
                 
                 # Get the user email for this bot
+                log_message(bot.name, f"🔍 Looking up user email for bot: {bot.name}")
                 cur.execute("SELECT user_email FROM bots WHERE name = %s", (bot.name,))
                 bot_user = cur.fetchone()
                 
@@ -223,6 +238,7 @@ async def place_trade(bot, signal):
                 log_message(bot.name, f"📈 Updating trade count to: {new_count}")
                 
                 cur.execute("UPDATE users SET trade_count = %s WHERE email = %s", (new_count, user_email))
+                conn.commit()  # Make sure to commit the transaction
                 
                 # Check if rows were affected
                 if cur.rowcount > 0:
@@ -233,10 +249,6 @@ async def place_trade(bot, signal):
                         **result,
                         "warning": "Trade successful but trade count not updated: Database update failed"
                     }
-                
-                # Commit the transaction
-                conn.commit()
-                log_message(bot.name, "💾 Trade count update committed")
                 
                 # Check subscription limits
                 cur.execute("SELECT subscription_plan FROM users WHERE email = %s", (user_email,))
@@ -253,7 +265,10 @@ async def place_trade(bot, signal):
             except Exception as e:
                 log_message(bot.name, f"❌ Error updating trade count: {str(e)}")
                 if conn:
-                    conn.rollback()
+                    try:
+                        conn.rollback()
+                    except Exception as rollback_error:
+                        log_message(bot.name, f"❌ Rollback error: {str(rollback_error)}")
                 return {
                     **result,
                     "warning": f"Trade successful but trade count not updated: {str(e)}"
@@ -268,4 +283,9 @@ async def place_trade(bot, signal):
     finally:
         # Always close database connections
         if conn:
-            conn.close()
+            try:
+                conn.close()
+                log_message(bot.name, "✅ Database connection closed")
+            except Exception as close_error:
+                log_message(bot.name, f"❌ Error closing database connection: {str(close_error)}")
+                log_message(bot.name, f"Stack trace: {traceback.format_exc()}")
