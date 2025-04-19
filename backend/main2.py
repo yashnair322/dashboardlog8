@@ -1067,9 +1067,10 @@ async def status():
     return {"message": "Trading Bot is running with database integration!"}
 
 # Modify the `place_trade` function to properly implement trade count tracking
-
 async def place_trade(bot, signal):
     """Execute a trade and handle trade count updates for subscription limits."""
+    from backend import bot_manager
+    
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
     conn = None
@@ -1079,7 +1080,7 @@ async def place_trade(bot, signal):
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # Get user subscription information
+        # Get user subscription information for the user who owns this bot
         cur.execute("""
             SELECT subscription_plan, trade_count, email 
             FROM users WHERE email = (
@@ -1121,21 +1122,16 @@ async def place_trade(bot, signal):
         conn.close()
         conn = None
         
-        # Execute the actual trade logic here
-        # This would call the appropriate exchange-specific implementation
-        # For demonstration purposes: 
-        log_message(bot.name, f"🚀 Executing {signal.action.upper()} order for {signal.symbol}...")
+        # Let bot_manager handle the actual trade execution
+        # This preserves the original system's logic for executing trades
+        result = await bot_manager.execute_trade(bot, signal)
         
-        # Simulate trade execution delay
-        await asyncio.sleep(1)
-        
-        # After successful trade execution, update the trade count
+        # After successful trade execution, update the trade count ONLY for existing users
         if user_email:
             conn = get_db_connection()
             cur = conn.cursor()
             
-            log_message(bot.name, f"📝 Updating trade count for user {user_email}")
-            
+            # Update trade count for the user who owns the bot that executed the order
             cur.execute("""
                 UPDATE users 
                 SET trade_count = COALESCE(trade_count, 0) + 1 
@@ -1152,16 +1148,15 @@ async def place_trade(bot, signal):
                 if subscription_plan == 'free' and new_count >= 4:
                     log_message(bot.name, "⚠️ This was your last trade on the free plan. Additional trades will be rejected.")
             else:
-                log_message(bot.name, "⚠️ Failed to update trade count. Database didn't return updated value.")
+                log_message(bot.name, "⚠️ Failed to update trade count. User may no longer exist in database.")
             
             conn.commit()
             cur.close()
             conn.close()
             conn = None
         
-        # Return success response
-        log_message(bot.name, f"✅ Order placed successfully: {signal.action.upper()} {signal.symbol}")
-        return {"status": "success", "message": f"Order placed: {signal.action} {signal.symbol}"}
+        # Return the result from the trade execution
+        return result
     
     except Exception as e:
         log_message(bot.name, f"❌ Error in place_trade: {str(e)}")
