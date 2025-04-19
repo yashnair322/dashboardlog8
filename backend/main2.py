@@ -1065,6 +1065,7 @@ async def get_bots(current_user: dict = Depends(get_current_user)):
 @router.get("/status")
 async def status():
     return {"message": "Trading Bot is running with database integration!"}
+
 async def place_trade(bot, signal):
     """Execute a trade and handle trade count updates for subscription limits."""
     from backend import bot_manager
@@ -1072,16 +1073,21 @@ async def place_trade(bot, signal):
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
     
+    # Create a single connection for the entire function to address issue #1
+    conn = None
+    trade_succeeded = False
+    trade_count_updated = False
+    
     try:
         # Execute the trade first
         result = await bot_manager.execute_trade(bot, signal)
+        trade_succeeded = True
         
         # Trade executed successfully, now update the trade count
         log_message(bot.name, "🔢 STARTING TRADE COUNT UPDATE...")
         
-        conn = None
         try:
-            # Get a new database connection specifically for the trade count update
+            # Get a database connection to be used throughout the function
             conn = psycopg2.connect(DATABASE_URL)
             cur = conn.cursor()
             
@@ -1092,7 +1098,12 @@ async def place_trade(bot, signal):
             
             if not bot_user or not bot_user[0]:
                 log_message(bot.name, "❌ ERROR: Could not find user email for this bot!")
-                return result
+                # For issue #2: We just log the error and continue without incrementing
+                # This preserves the successful trade result but doesn't update counters
+                return {
+                    **result,
+                    "warning": "Trade successful but trade count not updated: User not found"
+                }
             
             user_email = bot_user[0]
             log_message(bot.name, f"✅ Found user email: {user_email}")
@@ -1104,7 +1115,11 @@ async def place_trade(bot, signal):
             
             if not user_data:
                 log_message(bot.name, f"⚠️ WARNING: User {user_email} not found in users table!")
-                return result
+                # For issue #2: We just log the error and continue without incrementing
+                return {
+                    **result,
+                    "warning": "Trade successful but trade count not updated: User record missing"
+                }
                 
             current_count = user_data[0] if user_data[0] is not None else 0
             log_message(bot.name, f"📊 Current trade count: {current_count}")
@@ -1119,8 +1134,14 @@ async def place_trade(bot, signal):
             # Check if rows were affected
             if cur.rowcount > 0:
                 log_message(bot.name, f"✅ TRADE COUNT UPDATED SUCCESSFULLY: now {new_count}")
+                trade_count_updated = True
             else:
                 log_message(bot.name, "❌ ERROR: No rows updated in trade count update")
+                # For issue #5: Return message that trade was successful but count not updated
+                return {
+                    **result,
+                    "warning": "Trade successful but trade count not updated: Database update failed"
+                }
             
             # Commit the transaction
             conn.commit()
@@ -1131,7 +1152,14 @@ async def place_trade(bot, signal):
             plan_data = cur.fetchone()
             if plan_data and plan_data[0] == 'free' and new_count >= 4:
                 log_message(bot.name, "⚠️ ALERT: Free plan trade limit (4) has been reached!")
-                
+                return {
+                    **result,
+                    "warning": "Trade limit reached. Please upgrade your subscription for unlimited trades."
+                }
+            
+            # If we got here, everything was successful
+            return result
+            
         except Exception as e:
             log_message(bot.name, f"❌ ERROR updating trade count: {str(e)}")
             if conn:
@@ -1140,18 +1168,21 @@ async def place_trade(bot, signal):
                     log_message(bot.name, "↩️ Trade count update rollback due to error")
                 except:
                     pass
-        finally:
-            # Always close database connections
-            if conn:
-                try:
-                    cur.close()
-                    conn.close()
-                    log_message(bot.name, "🔒 Database connection closed after trade count update")
-                except:
-                    pass
-        
-        return result
-        
+            
+            # For issue #5: Return message that trade was successful but count not updated
+            return {
+                **result,
+                "warning": f"Trade successful but trade count not updated: {str(e)}"
+            }
+            
     except Exception as e:
         log_message(bot.name, f"❌ ERROR in place_trade: {str(e)}")
         raise
+    finally:
+        # Always close database connections
+        if conn:
+            try:
+                conn.close()
+                log_message(bot.name, "🔒 Database connection closed after trade count update")
+            except:
+                pass
