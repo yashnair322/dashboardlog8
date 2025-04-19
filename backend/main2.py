@@ -391,7 +391,7 @@ async def check_email_for_signals():
                                     bot_name,
                                     f"🚀 Executing {action.upper()} order for {bot.symbol}..."
                                 )
-                                result = await bot_manager.place_trade(
+                                result = await bot_manager.execute_trade(
                                     bot, signal)
 
                                 log_message(
