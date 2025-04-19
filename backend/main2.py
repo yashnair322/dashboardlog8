@@ -1091,21 +1091,14 @@ async def place_trade(bot, signal):
             cur.close()
             conn.close()
             raise Exception("Trade limit reached for free plan")
-
-        cur.execute("""
-            UPDATE users 
-            SET trade_count = trade_count + 1 
-            WHERE email = (
-                SELECT user_email FROM bots WHERE name = %s
-            )""", (bot.name,))
-        conn.commit()
-
+    
     cur.close()
     conn.close()
 
-    #Simulate trade execution. Replace with actual trade logic.
-    await asyncio.sleep(1)  
-    #Increment trade count for successful trades
+    # Simulate trade execution. Replace with actual trade logic.
+    await asyncio.sleep(1)
+    
+    # Only increment trade count once, after successful trade execution
     conn = get_db_connection()
     cur = conn.cursor()
     cur.execute("""
@@ -1116,5 +1109,8 @@ async def place_trade(bot, signal):
         )
     """, (bot.name,))
     conn.commit()
+    cur.close()
+    conn.close()
+    
     log_message(bot.name, f"✅ Order placed successfully: {signal.action.upper()} {signal.symbol}")
     return {"status": "success", "message": f"Order placed: {signal.action} {signal.symbol}"}
