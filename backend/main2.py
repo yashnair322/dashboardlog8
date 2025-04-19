@@ -1073,36 +1073,50 @@ async def place_trade(bot, signal):
     
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
+    conn = None
     
     try:
-        # First, execute the trade
+        # First execute the trade
+        log_message(bot.name, f"🚀 Executing {signal.action} trade for {signal.symbol}...")
         result = await bot_manager.execute_trade(bot, signal)
+        log_message(bot.name, f"✅ Trade executed successfully: {result}")
         
-        # After successful trade execution, update the trade count
+        # Now update the trade count in database
+        log_message(bot.name, "📊 Beginning trade count update process...")
+        
         try:
-            # Get the database URL from environment
-            db_url = os.getenv("DATABASE_URL")
-            if not db_url:
-                log_message(bot.name, "❌ DATABASE_URL not found in environment")
-                return result
-                
-            # Create a new connection specifically for updating trade count
-            conn = psycopg2.connect(db_url)
+            # Get database connection
+            conn = get_db_connection()
             cur = conn.cursor()
             
-            # Get the user email associated with this bot
+            # Find the user associated with this bot
+            log_message(bot.name, "🔍 Looking up user email for this bot...")
             cur.execute("SELECT user_email FROM bots WHERE name = %s", (bot.name,))
-            user_data = cur.fetchone()
+            bot_data = cur.fetchone()
             
-            if not user_data or not user_data[0]:
-                log_message(bot.name, "❌ Could not find user email for this bot")
-                conn.close()
+            if not bot_data:
+                log_message(bot.name, "❌ ERROR: Bot not found in database!")
                 return result
                 
-            user_email = user_data[0]
-            log_message(bot.name, f"✅ Found user email: {user_email}")
+            user_email = bot_data[0]
+            log_message(bot.name, f"👤 Found user email: {user_email}")
             
-            # Simple increment of trade_count for the user
+            # Check current trade count and subscription plan
+            log_message(bot.name, f"📊 Retrieving current trade count for user {user_email}...")
+            cur.execute("SELECT trade_count, subscription_plan FROM users WHERE email = %s", (user_email,))
+            user_data = cur.fetchone()
+            
+            if not user_data:
+                log_message(bot.name, f"⚠️ WARNING: User {user_email} not found in database!")
+                return result
+                
+            current_count = user_data[0] if user_data[0] is not None else 0
+            subscription_plan = user_data[1] or 'free'
+            
+            log_message(bot.name, f"📈 Current trade count: {current_count}, Plan: {subscription_plan}")
+            
+            # Update the trade count with a simple increment
+            log_message(bot.name, f"🔄 Incrementing trade count for user {user_email}...")
             cur.execute("""
                 UPDATE users 
                 SET trade_count = COALESCE(trade_count, 0) + 1 
@@ -1110,30 +1124,41 @@ async def place_trade(bot, signal):
                 RETURNING trade_count
             """, (user_email,))
             
-            updated_count = cur.fetchone()
-            conn.commit()
+            update_result = cur.fetchone()
             
-            if updated_count:
-                log_message(bot.name, f"✅ Trade count updated successfully. New count: {updated_count[0]}")
+            if update_result:
+                new_count = update_result[0]
+                log_message(bot.name, f"✅ Trade count successfully updated: {current_count} → {new_count}")
                 
-                # Check if user is on free plan and has reached limit
-                cur.execute("""
-                    SELECT subscription_plan FROM users WHERE email = %s
-                """, (user_email,))
-                plan_data = cur.fetchone()
-                
-                if plan_data and plan_data[0] == 'free' and updated_count[0] >= 4:
-                    log_message(bot.name, "⚠️ This was your last trade on the free plan. Additional trades will be rejected.")
+                # Check if free user hit limit
+                if subscription_plan == 'free' and new_count >= 4:
+                    log_message(bot.name, "⚠️ ALERT: User has reached the free plan trade limit (4 trades)")
             else:
-                log_message(bot.name, "⚠️ Trade count was not updated")
+                log_message(bot.name, "❌ ERROR: Failed to update trade count - no rows returned")
             
-            conn.close()
+            # Commit the transaction
+            conn.commit()
+            log_message(bot.name, "💾 Database transaction committed successfully")
             
         except Exception as e:
-            log_message(bot.name, f"❌ Error updating trade count: {str(e)}")
-            # Continue even if trade count update fails - the trade itself was successful
+            log_message(bot.name, f"❌ ERROR updating trade count: {str(e)}")
+            if conn:
+                try:
+                    conn.rollback()
+                    log_message(bot.name, "↩️ Database transaction rolled back")
+                except Exception as rollback_err:
+                    log_message(bot.name, f"⚠️ Rollback failed: {str(rollback_err)}")
+        finally:
+            # Always close connections
+            if conn:
+                try:
+                    cur.close()
+                    conn.close()
+                    log_message(bot.name, "🔒 Database connection closed")
+                except Exception as close_err:
+                    log_message(bot.name, f"⚠️ Error closing connection: {str(close_err)}")
         
         return result
     except Exception as e:
-        log_message(bot.name, f"❌ Error executing trade: {str(e)}")
+        log_message(bot.name, f"❌ ERROR in place_trade: {str(e)}")
         raise
