@@ -1069,48 +1069,74 @@ async def status():
 async def place_trade(bot, signal):
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
-
-    # Check trade limits for free plan
-    conn = get_db_connection()
-    cur = conn.cursor()
-
-    cur.execute("""
-        SELECT subscription_plan, trade_count 
-        FROM users WHERE email = (
-            SELECT user_email FROM bots WHERE name = %s
-        )""", (bot.name,))
-
-    user_data = cur.fetchone()
-    if user_data and user_data[0] == 'free':
-        trade_count = user_data[1] or 0
-        if trade_count >= 4:
-            log_message(bot.name, "❌ Trade limit reached for free plan. Bot will be paused.")
-            cur.execute("UPDATE bots SET paused = TRUE WHERE name = %s", (bot.name,))
-            bot.paused = True
+    
+    try:
+        # Check trade limits for free plan
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        # First check if the user exists and has a subscription plan
+        cur.execute("""
+            SELECT subscription_plan, trade_count, email 
+            FROM users WHERE email = (
+                SELECT user_email FROM bots WHERE name = %s
+            )""", (bot.name,))
+        
+        user_data = cur.fetchone()
+        log_message(bot.name, f"📊 User data before trade: {user_data}")
+        
+        if user_data:
+            user_email = user_data[2]
+            if user_data[0] == 'free':
+                trade_count = user_data[1] or 0
+                if trade_count >= 4:
+                    log_message(bot.name, "❌ Trade limit reached for free plan. Bot will be paused.")
+                    cur.execute("UPDATE bots SET paused = TRUE WHERE name = %s", (bot.name,))
+                    bot.paused = True
+                    conn.commit()
+                    cur.close()
+                    conn.close()
+                    raise Exception("Trade limit reached for free plan")
+        else:
+            log_message(bot.name, "⚠️ Warning: User not found in database")
+            
+        cur.close()
+        conn.close()
+        
+        # Execute the trade logic here
+        await asyncio.sleep(1)
+        
+        # Update trade count AFTER successful trade execution
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
+        if user_data:
+            log_message(bot.name, f"📝 Updating trade count for user {user_email}")
+            cur.execute("""
+                UPDATE users 
+                SET trade_count = COALESCE(trade_count, 0) + 1 
+                WHERE email = %s
+                RETURNING trade_count
+            """, (user_email,))
+            
+            new_count = cur.fetchone()
+            log_message(bot.name, f"📊 New trade count: {new_count}")
             conn.commit()
-            cur.close()
+            
+            # Double-check the update
+            cur.execute("SELECT trade_count FROM users WHERE email = %s", (user_email,))
+            verified_count = cur.fetchone()
+            log_message(bot.name, f"✅ Verified trade count in database: {verified_count}")
+        
+        cur.close()
+        conn.close()
+        
+        log_message(bot.name, f"✅ Order placed successfully: {signal.action.upper()} {signal.symbol}")
+        return {"status": "success", "message": f"Order placed: {signal.action} {signal.symbol}"}
+    
+    except Exception as e:
+        log_message(bot.name, f"❌ Error in place_trade: {str(e)}")
+        # Make sure connections are closed if there's an error
+        if 'conn' in locals() and conn:
             conn.close()
-            raise Exception("Trade limit reached for free plan")
-    
-    cur.close()
-    conn.close()
-
-    # Simulate trade execution. Replace with actual trade logic.
-    await asyncio.sleep(1)
-    
-    # Only increment trade count once, after successful trade execution
-    conn = get_db_connection()
-    cur = conn.cursor()
-    cur.execute("""
-        UPDATE users 
-        SET trade_count = COALESCE(trade_count, 0) + 1 
-        WHERE email = (
-            SELECT user_email FROM bots WHERE name = %s
-        )
-    """, (bot.name,))
-    conn.commit()
-    cur.close()
-    conn.close()
-    
-    log_message(bot.name, f"✅ Order placed successfully: {signal.action.upper()} {signal.symbol}")
-    return {"status": "success", "message": f"Order placed: {signal.action} {signal.symbol}"}
+        raise
