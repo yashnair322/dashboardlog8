@@ -1066,16 +1066,20 @@ async def get_bots(current_user: dict = Depends(get_current_user)):
 async def status():
     return {"message": "Trading Bot is running with database integration!"}
 
+# Modify the `place_trade` function to properly implement trade count tracking
+
 async def place_trade(bot, signal):
+    """Execute a trade and handle trade count updates for subscription limits."""
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
+    conn = None
     
     try:
         # Check trade limits for free plan
         conn = get_db_connection()
         cur = conn.cursor()
         
-        # First check if the user exists and has a subscription plan
+        # Get user subscription information
         cur.execute("""
             SELECT subscription_plan, trade_count, email 
             FROM users WHERE email = (
@@ -1083,35 +1087,55 @@ async def place_trade(bot, signal):
             )""", (bot.name,))
         
         user_data = cur.fetchone()
-        log_message(bot.name, f"📊 User data before trade: {user_data}")
         
-        if user_data:
-            user_email = user_data[2]
-            if user_data[0] == 'free':
-                trade_count = user_data[1] or 0
-                if trade_count >= 4:
-                    log_message(bot.name, "❌ Trade limit reached for free plan. Bot will be paused.")
-                    cur.execute("UPDATE bots SET paused = TRUE WHERE name = %s", (bot.name,))
-                    bot.paused = True
-                    conn.commit()
-                    cur.close()
-                    conn.close()
-                    raise Exception("Trade limit reached for free plan")
+        if not user_data:
+            log_message(bot.name, "⚠️ Warning: User not found in database. Unable to track trade counts.")
+            user_email = None
+            subscription_plan = "unknown"
+            current_trade_count = 0
         else:
-            log_message(bot.name, "⚠️ Warning: User not found in database")
+            user_email = user_data[2]
+            subscription_plan = user_data[0] or "free"
+            current_trade_count = user_data[1] or 0
             
+            log_message(bot.name, 
+                f"📊 Current user data: Email: {user_email}, Plan: {subscription_plan}, Trade count: {current_trade_count}")
+            
+            # Check if free plan user has reached trade limit
+            if subscription_plan == 'free' and current_trade_count >= 4:
+                log_message(bot.name, "❌ Trade limit reached for free plan (4 trades). This trade will be rejected.")
+                
+                # Update bot's paused state in database and memory
+                cur.execute("UPDATE bots SET paused = TRUE WHERE name = %s", (bot.name,))
+                conn.commit()
+                bot.paused = True
+                
+                # Close database connection
+                cur.close()
+                conn.close()
+                
+                raise Exception("Trade limit reached for free plan (maximum 4 trades)")
+        
+        # Close the cursor and connection before trade execution
         cur.close()
         conn.close()
+        conn = None
         
-        # Execute the trade logic here
+        # Execute the actual trade logic here
+        # This would call the appropriate exchange-specific implementation
+        # For demonstration purposes: 
+        log_message(bot.name, f"🚀 Executing {signal.action.upper()} order for {signal.symbol}...")
+        
+        # Simulate trade execution delay
         await asyncio.sleep(1)
         
-        # Update trade count AFTER successful trade execution
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        if user_data:
+        # After successful trade execution, update the trade count
+        if user_email:
+            conn = get_db_connection()
+            cur = conn.cursor()
+            
             log_message(bot.name, f"📝 Updating trade count for user {user_email}")
+            
             cur.execute("""
                 UPDATE users 
                 SET trade_count = COALESCE(trade_count, 0) + 1 
@@ -1119,24 +1143,33 @@ async def place_trade(bot, signal):
                 RETURNING trade_count
             """, (user_email,))
             
-            new_count = cur.fetchone()
-            log_message(bot.name, f"📊 New trade count: {new_count}")
-            conn.commit()
+            updated_count = cur.fetchone()
+            if updated_count:
+                new_count = updated_count[0]
+                log_message(bot.name, f"📊 Trade count updated successfully: {current_trade_count} → {new_count}")
+                
+                # Check if this update just reached the limit
+                if subscription_plan == 'free' and new_count >= 4:
+                    log_message(bot.name, "⚠️ This was your last trade on the free plan. Additional trades will be rejected.")
+            else:
+                log_message(bot.name, "⚠️ Failed to update trade count. Database didn't return updated value.")
             
-            # Double-check the update
-            cur.execute("SELECT trade_count FROM users WHERE email = %s", (user_email,))
-            verified_count = cur.fetchone()
-            log_message(bot.name, f"✅ Verified trade count in database: {verified_count}")
+            conn.commit()
+            cur.close()
+            conn.close()
+            conn = None
         
-        cur.close()
-        conn.close()
-        
+        # Return success response
         log_message(bot.name, f"✅ Order placed successfully: {signal.action.upper()} {signal.symbol}")
         return {"status": "success", "message": f"Order placed: {signal.action} {signal.symbol}"}
     
     except Exception as e:
         log_message(bot.name, f"❌ Error in place_trade: {str(e)}")
-        # Make sure connections are closed if there's an error
-        if 'conn' in locals() and conn:
-            conn.close()
         raise
+    finally:
+        # Ensure database connections are closed
+        if conn:
+            try:
+                conn.close()
+            except Exception as e:
+                log_message(bot.name, f"⚠️ Error closing database connection: {str(e)}")
