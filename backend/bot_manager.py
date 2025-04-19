@@ -166,7 +166,7 @@ async def execute_trade(bot, signal):
         return {"status": "error", "message": f"Failed to place order: {str(e)}"}
 
 # Updated place_trade that manages both trade execution and count updates
-async def place_trade(bot, signal):
+"""async def place_trade(bot, signal):
     """Execute a trade and handle trade count updates for subscription limits."""
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
@@ -269,3 +269,4 @@ async def place_trade(bot, signal):
         # Always close database connections
         if conn:
             conn.close()
+"""
