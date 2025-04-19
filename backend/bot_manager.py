@@ -90,8 +90,9 @@ async def execute_trade(bot, signal):
     Place an order for the bot depending on the trade signal.
     It first checks if the bot has an open position.
     If the position is conflicting, it closes the open position and then places the new trade.
+    
+    Execute the trade itself without updating trade count.
     """
-      """Execute the trade itself without updating trade count."""
     # Normalize the exchange name to lowercase for consistent comparison
     exchange = bot.exchange.lower()
     
