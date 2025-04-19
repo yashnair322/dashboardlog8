@@ -173,87 +173,138 @@ async def place_trade(bot, signal):
     exchange = bot.exchange.lower()
     log_message(bot.name, f"🔍 Attempting trade with exchange: '{exchange}'")
     
-    # Create a single connection for the entire function
-    conn = None
-    
     try:
         # Execute the trade first
+        log_message(bot.name, "Starting trade execution...")
         result = await execute_trade(bot, signal)
+        log_message(bot.name, f"Trade execution result: {result}")
         
         # Only update trade count if trade was successful
         if result["status"] == "success":
-            log_message(bot.name, "🔢 Updating trade count...")
+            log_message(bot.name, "🔢 CRITICAL: About to update trade count...")
             
             try:
                 # Make sure environment variables are loaded
+                log_message(bot.name, "Loading environment variables...")
                 from dotenv import load_dotenv
-                load_dotenv()  # Add this line to ensure .env is loaded
+                load_dotenv()
                 
                 # Get a database connection
                 import psycopg2
                 import os
+                import traceback
+                
+                log_message(bot.name, "Getting DATABASE_URL...")
                 DATABASE_URL = os.getenv("DATABASE_URL")
                 
                 if not DATABASE_URL:
-                    log_message(bot.name, "❌ DATABASE_URL environment variable not found!")
+                    log_message(bot.name, "❌ CRITICAL: DATABASE_URL environment variable not found!")
                     return {
                         **result,
                         "warning": "Trade successful but trade count not updated: Database URL missing"
                     }
                 
-                log_message(bot.name, f"🔌 Connecting to database with URL: {DATABASE_URL[:10]}...")
-                conn = psycopg2.connect(DATABASE_URL)
+                log_message(bot.name, f"🔌 CRITICAL: Connecting to database with URL prefix: {DATABASE_URL[:10]}...")
+                conn = None
+                try:
+                    conn = psycopg2.connect(DATABASE_URL)
+                    log_message(bot.name, "✅ Database connection successful!")
+                except Exception as conn_error:
+                    log_message(bot.name, f"❌ CRITICAL: Database connection failed: {str(conn_error)}")
+                    return {
+                        **result,
+                        "warning": f"Trade successful but trade count not updated: Database connection failed: {str(conn_error)}"
+                    }
+                
                 cur = conn.cursor()
                 
                 # Get the user email for this bot
-                log_message(bot.name, f"🔍 Looking up user email for bot: {bot.name}")
-                cur.execute("SELECT user_email FROM bots WHERE name = %s", (bot.name,))
-                bot_user = cur.fetchone()
+                log_message(bot.name, f"🔍 CRITICAL: Looking up user email for bot: {bot.name}")
+                try:
+                    cur.execute("SELECT user_email FROM bots WHERE name = %s", (bot.name,))
+                    bot_user = cur.fetchone()
+                    log_message(bot.name, f"Query result for bot user: {bot_user}")
+                except Exception as query_error:
+                    log_message(bot.name, f"❌ CRITICAL: Error querying bot user: {str(query_error)}")
+                    return {
+                        **result,
+                        "warning": f"Trade successful but trade count not updated: Error querying bot user: {str(query_error)}"
+                    }
                 
                 if not bot_user or not bot_user[0]:
-                    log_message(bot.name, "❌ Could not find user email for this bot!")
+                    log_message(bot.name, "❌ CRITICAL: Could not find user_email for this bot!")
                     return {
                         **result,
                         "warning": "Trade successful but trade count not updated: User not found"
                     }
                 
                 user_email = bot_user[0]
-                log_message(bot.name, f"✅ Found user email: {user_email}")
+                log_message(bot.name, f"✅ CRITICAL: Found user email: {user_email}")
                 
                 # Get current trade count
-                cur.execute("SELECT trade_count FROM users WHERE email = %s", (user_email,))
-                user_data = cur.fetchone()
-                
-                if not user_data:
-                    log_message(bot.name, f"⚠️ User {user_email} not found in users table!")
+                try:
+                    cur.execute("SELECT trade_count FROM users WHERE email = %s", (user_email,))
+                    user_data = cur.fetchone()
+                    log_message(bot.name, f"Query result for user data: {user_data}")
+                except Exception as query_error:
+                    log_message(bot.name, f"❌ CRITICAL: Error querying user data: {str(query_error)}")
                     return {
                         **result,
-                        "warning": "Trade successful but trade count not updated: User record missing"
+                        "warning": f"Trade successful but trade count not updated: Error querying user data: {str(query_error)}"
+                    }
+                
+                if not user_data:
+                    log_message(bot.name, f"⚠️ CRITICAL: User {user_email} not found in users table!")
+                    return {
+                        **result,
+                        "warning": f"Trade successful but trade count not updated: User record missing for {user_email}"
                     }
                     
                 current_count = user_data[0] if user_data[0] is not None else 0
-                log_message(bot.name, f"📊 Current trade count: {current_count}")
+                log_message(bot.name, f"📊 CRITICAL: Current trade count: {current_count}")
                 
                 # Update the trade count
                 new_count = current_count + 1
-                log_message(bot.name, f"📈 Updating trade count to: {new_count}")
+                log_message(bot.name, f"📈 CRITICAL: Updating trade count to: {new_count}")
                 
-                cur.execute("UPDATE users SET trade_count = %s WHERE email = %s", (new_count, user_email))
-                conn.commit()  # Make sure to commit the transaction
+                try:
+                    cur.execute("UPDATE users SET trade_count = %s WHERE email = %s", (new_count, user_email))
+                    log_message(bot.name, f"Rows affected by update: {cur.rowcount}")
+                except Exception as update_error:
+                    log_message(bot.name, f"❌ CRITICAL: Error updating trade count: {str(update_error)}")
+                    return {
+                        **result,
+                        "warning": f"Trade successful but trade count not updated: Database update error: {str(update_error)}"
+                    }
+                
+                try:
+                    conn.commit()
+                    log_message(bot.name, "💾 CRITICAL: Trade count update committed successfully!")
+                except Exception as commit_error:
+                    log_message(bot.name, f"❌ CRITICAL: Error committing trade count update: {str(commit_error)}")
+                    return {
+                        **result,
+                        "warning": f"Trade successful but trade count not updated: Commit error: {str(commit_error)}"
+                    }
                 
                 # Check if rows were affected
                 if cur.rowcount > 0:
-                    log_message(bot.name, f"✅ Trade count updated successfully: {new_count}")
+                    log_message(bot.name, f"✅ CRITICAL: Trade count updated successfully to: {new_count}")
                 else:
-                    log_message(bot.name, "❌ No rows updated in trade count update")
+                    log_message(bot.name, "❌ CRITICAL: No rows updated in trade count update")
                     return {
                         **result,
-                        "warning": "Trade successful but trade count not updated: Database update failed"
+                        "warning": "Trade successful but trade count not updated: Database update affected 0 rows"
                     }
                 
                 # Check subscription limits
-                cur.execute("SELECT subscription_plan FROM users WHERE email = %s", (user_email,))
-                plan_data = cur.fetchone()
+                try:
+                    cur.execute("SELECT subscription_plan FROM users WHERE email = %s", (user_email,))
+                    plan_data = cur.fetchone()
+                    log_message(bot.name, f"Subscription plan data: {plan_data}")
+                except Exception as query_error:
+                    log_message(bot.name, f"❌ Error querying subscription plan: {str(query_error)}")
+                
                 if plan_data and plan_data[0] == 'free' and new_count >= 4:
                     log_message(bot.name, "⚠️ Free plan trade limit (4) has been reached!")
                     return {
@@ -261,32 +312,28 @@ async def place_trade(bot, signal):
                         "warning": "Trade limit reached. Please upgrade your subscription for unlimited trades."
                     }
                 
+                log_message(bot.name, "CRITICAL: Trade count update fully completed successfully!")
                 return result
                 
             except Exception as e:
-                log_message(bot.name, f"❌ Error updating trade count: {str(e)}")
-                if conn:
-                    try:
-                        conn.rollback()
-                    except Exception as rollback_error:
-                        log_message(bot.name, f"❌ Rollback error: {str(rollback_error)}")
+                log_message(bot.name, f"❌ CRITICAL: Unexpected error updating trade count: {str(e)}")
+                log_message(bot.name, f"Stack trace: {traceback.format_exc()}")
                 return {
                     **result,
-                    "warning": f"Trade successful but trade count not updated: {str(e)}"
+                    "warning": f"Trade successful but trade count not updated: Unexpected error: {str(e)}"
                 }
+            finally:
+                if conn:
+                    try:
+                        conn.close()
+                        log_message(bot.name, "Database connection closed")
+                    except Exception as close_error:
+                        log_message(bot.name, f"Error closing database connection: {str(close_error)}")
         else:
-            # Trade wasn't successful, just return the result
+            log_message(bot.name, f"Trade not successful, skipping trade count update")
             return result
             
     except Exception as e:
-        log_message(bot.name, f"❌ Error in place_trade: {str(e)}")
+        log_message(bot.name, f"❌ CRITICAL: Error in overall place_trade function: {str(e)}")
+        log_message(bot.name, f"Stack trace: {traceback.format_exc()}")
         raise
-    finally:
-        # Always close database connections
-        if conn:
-            try:
-                conn.close()
-                log_message(bot.name, "✅ Database connection closed")
-            except Exception as close_error:
-                log_message(bot.name, f"❌ Error closing database connection: {str(close_error)}")
-                log_message(bot.name, f"Stack trace: {traceback.format_exc()}")
